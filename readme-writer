@@ -1,0 +1,265 @@
+#!/usr/bin/bash
+#declare wakaKey="$WAKATIME_API_KEY"
+#declare githubKey="$GITHUB_TOKEN"
+source api-keys #Temporary for testing the script
+# dependencies: bash, sed, jq, printf, ed, perl
+declare template="$1"
+declare readme="$2"
+_main() {
+  ## Find all the html comment tags and put them in an array. 
+  local -a findComments=("languages" "editors" "os" "projects" "timezone")
+  local -a foundComments=()
+  local -i checkCommentStartLine
+  local -i checkCommentEndLine
+  ## TODO create findComments function
+  ## Loop over all possible comments from findComments and check if they
+  ## can be found in template, if yes add them to foundComments
+  for findComment in "${findComments[@]}"; do
+    #checkCommentStartLine=$(grep -n '<!--'"$findComment"'-start-->' "$template" | cut --characters=1,2)
+    checkCommentStartLine=$(grep -n '<!--'"$findComment"'-start-->' "$template" | cut -c1,2)
+    #checkCommentEndLine=$(grep -n '<!--'"$findComment"'-end-->' "$template" | cut --characters=1,2)
+    checkCommentEndLine=$(grep -n '<!--'"$findComment"'-end-->' "$template" | cut -c1,2)
+    if [[ $checkCommentStartLine -ne 0 && $checkCommentEndLine -ne 0 ]]; then
+      foundComments+=( "$findComment" )
+    fi
+  done
+  [[ -n $foundComments ]] || exit 1
+  _fetchData
+}
+
+_fetchData() {
+  local fetchWakaData
+  fetchWakaData=$(curl https://wakatime.com/api/v1/users/current/stats/last_7_days?api_key="$wakaKey" | jq '.')
+  #fetchWakaData=$(wget -O - https://wakatime.com/api/v1/users/current/stats/last_7_days?api_key="$wakaKey" | jq '.')
+  _filterData
+}
+
+_filterData() {
+  ##  Declare local variables: strings, integers and arrays
+  local filterDataName
+  local filterDataPercent
+  local filterDataText
+  local -i filterDataNameLines
+  local -i filterDataPercentLines
+  local -i filterDataTextLines
+  local -A filterDataNameArray=()
+  local -A filterDataPercentArray=()
+  local -A filterDataTextArray=()
+  local -A filterDataLinesArray=()
+  ## TODO create a function for this loop line finding loop
+  ## This loop checks the line numbers filtered from the data. Then it
+  ## stores the line numbers into an array. And at the end checks if every
+  ## collection key-value pair has the same line numbers or exit the script.
+  ## 'line number array loop':
+  for foundComment in "${foundComments[@]}"; do                                            
+    ## check if foundComment is timezone if so break out of the loop
+    [[ "$foundComment" != timezone ]] || break
+    ## filter operating system with correct keyword in API
+    if [[ "$foundComment" == "os" ]]; then foundComment="operating_systems"; fi
+    ## TODO If it can't find any data because the user was inactive make
+    ## sure a inactive() function gets triggered that prints this inactivity
+    ## Fetch data as strings per line in a variable
+    filterDataName=$(echo "$fetchWakaData" | jq -r '.data.'"$foundComment"' | .[] | .name')
+    filterDataPercent=$(echo "$fetchWakaData" | jq -r '.data.'"$foundComment"' | .[] | .percent')
+    filterDataText=$(echo "$fetchWakaData" | jq -r '.data.'"$foundComment"' | .[] | .text')
+    ## change variable back to more sane shortcut
+    if [[ "$foundComment" == "operating_systems" ]]; then foundComment="os"; fi
+    ## Get the total number of lines for each variable and store it in associative array
+    filterDataLinesArray+=( ["$foundComment"NameLines]=$(echo "$filterDataName" | wc -l) )
+    filterDataLinesArray+=( ["$foundComment"PercentLines]=$(echo "$filterDataPercent" | wc -l) )
+    filterDataLinesArray+=( ["$foundComment"TextLines]=$(echo "$filterDataText" | wc -l) )
+    ## debug
+    #for key in "${!filterDataLinesArray[@]}"; do echo "$key => ${filterDataLinesArray[$key]}"; done
+    #echo "${foundComments[@]}"
+    #echo $foundComment
+    ## test if lines per foundComment are the same on each filtered variable
+    [[ ${filterDataLinesArray["$foundComment"NameLines]} -eq ${filterDataLinesArray["$foundComment"PercentLines]} && \
+      ${filterDataLinesArray["$foundComment"NameLines]} -eq ${filterDataLinesArray["$foundComment"TextLines]} ]] || exit 2
+  done
+  ##TODO DRY create a function with this loop and allow changing data to
+  ##be passed in function calls
+  if grep -q 'languages' <<< "${foundComments[@]}"; then ## only use this if the elements in the array do not contain spaces!
+    ## Filter languages data and add it to arrays. Uses 'line number array loop' as max. index to iterate over
+    for ((i = 0 ; i < "${filterDataLinesArray[languagesNameLines]}" ; i++)); do
+      filterDataNameArray+=( [languagesName"$i"]="$(echo "$fetchWakaData" | jq -r ".data.languages | .[$i] | .name")" )
+      filterDataPercentArray+=( [languagesPercent"$i"]="$(echo "$fetchWakaData" | jq -r ".data.languages | .[$i] | .percent")" )
+      filterDataTextArray+=( [languagesText"$i"]="$(echo "$fetchWakaData" | jq -r ".data.languages | .[$i] | .text")" )
+    done
+  fi
+  if grep -q 'editors' <<< "${foundComments[@]}"; then ## only use this if the elements in the array do not contain spaces!
+    ## Filter editors data and add it to arrays. Uses 'line number array loop' as max. index to iterate over
+    for ((i = 0 ; i < "${filterDataLinesArray[editorsNameLines]}" ; i++)); do
+      filterDataNameArray+=( [editorsName"$i"]="$(echo "$fetchWakaData" | jq -r ".data.editors | .[$i] | .name")" )
+      filterDataPercentArray+=( [editorsPercent"$i"]="$(echo "$fetchWakaData" | jq -r ".data.editors | .[$i] | .percent")" )
+      filterDataTextArray+=( [editorsText"$i"]="$(echo "$fetchWakaData" | jq -r ".data.editors | .[$i] | .text")" )
+    done
+  fi
+  if grep -q 'os' <<< "${foundComments[@]}"; then ## only use this if the elements in the array do not contain spaces!
+    ## Filter OS data and add it to array. Uses 'line number array loop' as max. index to iterate over.
+    for ((i = 0 ; i < "${filterDataLinesArray[osNameLines]}" ; i++)); do
+      filterDataNameArray+=( [osName"$i"]="$(echo "$fetchWakaData" | jq -r ".data.operating_systems | .[$i] | .name")" )
+      filterDataPercentArray+=( [osPercent"$i"]="$(echo "$fetchWakaData" | jq -r ".data.operating_systems | .[$i] | .percent")" )
+      filterDataTextArray+=( [osText"$i"]="$(echo "$fetchWakaData" | jq -r ".data.operating_systems | .[$i] | .text")" )
+    done
+  fi
+  if grep -q 'projects' <<< "${foundComments[@]}"; then ## only use this if the elements in the array do not contain spaces!
+    ## Filter projects data and add it to array. Uses 'line number array loop' as max. index to iterate over.
+    for ((i = 0 ; i < "${filterDataLinesArray[projectsNameLines]}" ; i++)); do
+      filterDataNameArray+=( [projectsName"$i"]="$(echo "$fetchWakaData" | jq -r ".data.projects | .[$i] | .name")" )
+      filterDataPercentArray+=( [projectsPercent"$i"]="$(echo "$fetchWakaData" | jq -r ".data.projects | .[$i] | .percent")" )
+      filterDataTextArray+=( [projectsText"$i"]="$(echo "$fetchWakaData" | jq -r ".data.projects | .[$i] | .text")" )
+    done
+  fi
+  ##TODO add fetch timezone (directly only one key-value pair) and store
+  ##into variable
+  
+  ##debug
+  #for key in "${!filterDataPercentArray[@]}"; do echo "$key => ${filterDataPercentArray[$key]}"; done
+  #for key in "${!filterDataTextArray[@]}"; do echo "$key => ${filterDataTextArray[$key]}"; done
+  #for key in "${!filterDataNameArray[@]}"; do echo "$key => ${filterDataNameArray[$key]}"; done
+  #echo "${filterDataLinesArray[editorsNameLines]}"
+  #echo "${filterDataLinesArray[@]}"
+  #echo ${filterDataLinesArray[languagesNameLines]}
+  #for key in "${!filterDataNameArray[@]}"; do echo "$key => ${filterDataNameArray[$key]}"; done
+  _printHtmlBlocks
+}
+_createHtmlBlock() {
+  local commentArg="$1"
+  local languagesHtmlBlock='<h4>💬 Languages:</h4>'
+  local editorsHtmlBlock='<h4>📝 Editors:</h4>'
+  local osHtmlBlock='<h4>💻 Operating Systems:</h4>'
+  local projectsHtmlBlock='<h4>🌱 Projects:</h4>'
+  ##TODO create clock emoji according to timezone
+  local timezoneHtmlBlock='<h4>🕐 Timezone:</h4>'
+  ## Indirectly reference to assign variables in loop.
+  #local -n htmlBlock=${commentArg}HtmlBlock
+  local -n htmlBlock=${commentArg}HtmlBlock
+  ##TODO if argument is timezone create if statement -> no loop needed
+  ##just a one liner and exit out of this function after that
+  for ((i = 0 ; i < "${filterDataLinesArray["${commentArg}NameLines"]}" ; i++)); do
+    #echo ${filterDataNameArray["languagesName$i"]}
+    ## indirectly refer to variables to append more content
+    ## ${commentArg}HtmlBlock+= => doesn't work as an assignment won't accept $
+    ##https://stackoverflow.com/questions/27557146/assigning-one-variable-to-another-in-bash#27557194
+    htmlBlock+='
+<span>'"${filterDataNameArray["${commentArg}Name$i"]}"'</span>&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;<span>'"${filterDataTextArray["${commentArg}Text$i"]}"'</span>&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;<span>'"${filterDataPercentArray["${commentArg}Percent$i"]}%"'</span>'
+    ##debug
+    #echo $htmlBlock
+    #echo "${htmlBlock}"
+    #echo "${filterDataNameArray[""${commentArg}"Name"$i""]}"
+    #echo "${filterDataLinesArray["${commentArg}NameLines"]}"
+    #echo ${filterDataNameArray[languagesName0]}
+    #echo ${filterDataNameArray[languagesName1]}
+  done
+  echo "$htmlBlock"
+}
+## TODO make _printDataLanguages to generic _printData and print all the
+## Data strings that are defined in the comment array
+_printHtmlBlocks() {
+  for foundComment in "${foundComments[@]}"; do
+    htmlBlock="$(_createHtmlBlock $foundComment)"
+    perl -i -0777pe "s#<!--${foundComment}-start-->\n<!--${foundComment}-end-->#<!--${foundComment}-start-->\n${htmlBlock}\n  <!--${foundComment}-end-->#s" "$template"
+    #perl -i -0777pe "s/<!--languages-start-->\n<!--languages-end-->/<!--languages-start-->\nThis is a test\n  <!--languages-end-->/s" "$template"
+    #perl "-i -0777pe" "s/<!--languages-start-->\n<!--languages-end-->/<!--languages-start-->\nCONTENT_GOES_HERE\n<!--languages-end-->/s" templates/preTemplateReadme.md.tpl
+    #perl -i -pe "s/<!--languages-start-->\n<!--languages-end-->/<!--languages-start-->\nCONTENT_GOES_HERE\n<!--languages-end-->/s" "$template"
+    #perl -i -pe "s/hello\nworld/hello\nCONTENT_GOES_HERE\nworld/s" jesus
+  #perl -i -0777pe "s|<!--languages-start-->\n<!--languages-end-->|<!--languages-start-->\n${foo}\n<!--languages-end-->|s" "$template"
+  #perl -i -0777pe "s|<!--languages-start-->\n<!--languages-end-->|<!--languages-start-->\n${htmlBlock}\n<!--languages-end-->|s" templates/jesus
+  #perl -i -0777pe "s|<!--languages-start-->\s*<!--languages-end-->|<!--languages-start-->\n${htmlBlock}\n<!--languages-end-->|s" templates/jesus
+  #
+  #perl -i -0777pe "s|<!--${foundComment}-start-->\s*<!--${foundComment}-end-->|<!--${foundComment}-start-->\n${htmlBlock}\n  <!--${foundComment}-end-->|s" templates/jesus
+  #
+  #
+  ## perl explained: https://github.com/SimonWoodtli/zet/tree/main/20230104141626
+  perl -i -0777pe "s|<!--${foundComment}-start-->\s*<!--${foundComment}-end-->|<!--${foundComment}-start-->\n${htmlBlock}\n  <!--${foundComment}-end-->|s" "$template"
+
+  done
+  #cat "$template"
+  #printf "%s\n" "/<!--"${commentArg}"-start-->/r buffer" w
+  ## Add new API data to template
+  #printf "%s\n" "/<!--${commentArg}-start-->/r buffer" w  | ed -s "$template"
+  #printf "%s\n" "/<!--${commentArg}-start-->/r buffer" w  | ed "$template"
+  #perl -i -0777pe "s/<!--${commentArg}-start-->\n<!--${commentArg}-end-->/<!--${commentArg}-start-->\ntest\n<!--${commentArg}-end-->/s" "$template"
+  ## Update new api content into readme
+  ## TODO avoid cat/echo use here strings
+  cat "$template" > "$readme"
+
+  _cleanUpTemplates
+}
+_cleanUpTemplates() {
+  for foundComment in "${foundComments[@]}"; do
+    ## cleanup comments from readme
+    sed -i "/<!--${foundComment}-start-->/d" "$readme"
+    sed -i "/<!--${foundComment}-end-->/d" "$readme"
+    ## cleanup content between comments
+    perl -i -0777pe "s/<!--${foundComment}-start-->.*<!--${foundComment}-end-->/<!--${foundComment}-start-->\n  <!--${foundComment}-end-->/s" "$template"
+  done
+
+  ## Method 1:
+  ## Function to edit readme (remove html comment) and template (remove content)
+  ## store line number from start/end tag
+  #local -i findCommentStartLine
+  #local -i findCommentEndLine
+  
+  ## Loop over comment array and for earch comment
+  #for foundComment in "${foundComments[@]}"; do
+    # Grab html comment start and finish line number
+    #echo $foundComment
+    #findCommentStartLine=$(grep -n '<!--'"$foundComment"'-start-->' "$template" | cut --characters=1,2)
+    #echo "$findCommentStartLine"
+    #findCommentEndLine=$(grep -n '<!--'"$foundComment"'-end-->' "$template" | cut --characters=1,2)
+    ## If findCommentStartLine gives back 0 skip sed commands
+    #if [[ $findCommentStartLine -ne 0 && $findCommentEndLine -ne 0 ]]; then
+      ## Delete html comment tags from readme
+      ##FIXME only delete the first html comment but the rest stays
+      #sed -i "${findCommentStartLine}d;${findCommentEndLine}d" "$readme"
+      ## Adjust num to match content
+      #((findCommentStartLine=findCommentStartLine+1))
+      #((findCommentEndLine=findCommentEndLine-1))
+      ## Delete content between html comment tags from template
+      #sed -i "$findCommentStartLine,${findCommentEndLine}d" "$template"
+    #fi
+  #done
+}
+_main
+
+## Remember: Variables and sed are a bit tricky. Don't quote variables that have spaces!
+#https://stackoverflow.com/questions/49461777/sed-with-variables-and-spaces
+##TODO ADDITIONAL: Add the github api and have some queries about github stats: replace all the functions I currently fetch via readme-scribe
+## add another github api request to show which github repos are written in
+#which language an list them according to the language that is no.1 in most repos -> language/repo
+##TODO Maybe I can use the mktemp command to create a temp file instead
+#of createing my buffer file figure out once this is in a docker container
+##TODO add a percentage/progress bar to the html block to visualize the
+##percentage
+
+##TODO The idea for this repo is that a persons github profile repo should be setup with a
+##github action that runs this wakatime-stats repo and this bash script gets
+##executed
+##TODO How to get githubs secret repo env variables into bash variable?
+##I guess it is just a normal exported env. variable so this might
+##actually work
+##The user would need to set a github action secret from the profile
+##repos settings and name it 'WAKATIME_API_KEY'
+##TODO How to get jq installed on ubunut-latest from github action? => use
+##docker
+#declare wakaKey="$WAKATIME_API_KEY"
+##TODO The current templates/files are used for testing, later when I
+##I got a docker image and github action I need to implement it in this
+##script so that it actually targets the files in the github profile
+##TODO Use jq to get all the data, for every title with some stats that
+##you fetch from wakas api like:
+## Editors, Languages etc. now have a env. variable that people have to place
+## in their preTemplatesReadme.md.tpl wherever they see fit
+##TODO Create docker image on hub.docker.com that uses the env. I need to
+##be able to run wakatime-stats
+##TODO Create github action that gets listed on marketplace, I guess?
+##Write README.md on how to configure and setup this repo to be able to
+##use it
+##TODO Since readme-scribe already uses a template and I can't add
+##any hidden comments because readme-scribe will delete them when it runs.
+##Which in turn willl make direct changes from this script on the readme-scribe template
+##impossible.
+##My idea is to have a pre-template which than writes and updates the
+##readme-scribe template which than runs and updates the real README.md
+##define the pre-template.
