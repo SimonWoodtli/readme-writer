@@ -1,6 +1,7 @@
 ## Dockerfile used to build image:
 ## https://hub.docker.com/r/simonwoodtli/readme-writer
 FROM alpine:latest
+LABEL authors="Simon D. Woodtli: simonwoodtli@posteo.net"
 ## add /root/.local/bin to PATH
 ENV PATH=/root/.local/bin:$PATH
 ## install dependencies
