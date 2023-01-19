@@ -1,0 +1,220 @@
+#!/usr/bin/bash
+#declare wakaKey="$PERSONAL_WAKATIME_KEY"
+#declare githubKey="$PERSONAL_GITHUB_TOKEN"
+source api-keys #Temporary for testing the script
+source queries
+# dependencies: bash, sed, jq, printf, perl
+declare flag="$1"
+declare template="$2"
+declare readme="$3"
+## Check if flag is given or reassign variables
+if [[ "$flag" != -* ]]; then
+  flag=""
+  template="$1"
+  readme="$2"
+fi
+## Check if template and readme are right format or exit
+[[ "$template" == *.tpl ]] || exit 1
+[[ "$readme" == *.md ]] || exit 1
+########################## general func start ##########################
+_main() {
+  local -a wakaComments=($(_checkHtmlComments wakatime))
+  echo "start wakatime"
+  [[ -z "${wakaComments[@]}" ]] || { service="wakatime"; _fetchWakaData; }
+  echo "start github"
+  local -a githubComments=($(_checkHtmlComments github))
+  #[[ -z "${githubComments[@]}" ]] || { service="github"; _fetchGithubData; }
+}
+_checkHtmlComments() {
+  local service=$1
+  ## Find all the html comment tags and put them in an array.
+  local -a commentsArray
+  case "$service" in
+    ## keywords/comments are existent in REST API. They are
+    ## needed throughout the whole script to filter with jq and so on.
+    wakatime) local -a lookupComments=("languages" "editors" "operating_systems" "projects" "timezone");;
+    ## since graphql is used here, the keyword could be anything as queries are
+    ## needed and filtering with jq works with more generic terms.
+    github) local -a lookupComments=("languages" "projects");; #update this whenever you add more queries
+    ## future REST APIs should also be implemented with a keyword that
+    ## exists in the received JSON and is represented in the html comment.
+  esac
+  ## Loop over all possible comments from lookupComments and check if they
+  ## can be found in template, if yes add them to wakaComments
+  for lookupComment in "${lookupComments[@]}"; do
+    checkCommentStartLine=$(grep -n "<!--$service-$lookupComment-start-->" "$template" | cut -c1,2)
+    checkCommentEndLine=$(grep -n "<!--$service-$lookupComment-end-->" "$template" | cut -c1,2)
+    if [[ $checkCommentStartLine -ne 0 && $checkCommentEndLine -ne 0 ]]; then
+      #commentsArray+=("${lookupComment##*-}") # rm prefix waka, git etc.
+      commentsArray+=("${lookupComment}") # rm prefix waka, git etc.
+    fi
+  done
+  echo "${commentsArray[@]}"
+}
+############################# wakatime func ############################
+_fetchWakaData() {
+  local fetchWakaData=$(curl https://wakatime.com/api/v1/users/current/stats/last_7_days?api_key="$wakaKey" | jq '.')
+  _filterWakaData
+}
+_filterWakaData() {
+  ##  Declare local variables: strings, integers and arrays
+  local -A filterDataNameArray=()
+  local -A filterDataPercentArray=()
+  local -A filterDataTextArray=()
+  local -A filterDataLinesArray=()
+  local filterDataTimezone="$(jq -r ".data.timezone" <<< "$fetchWakaData")"
+  ## Create associative arrays with data, use comment as outer loop and
+  ## line number as inner loop. Uses line number  as max. index to
+  ## iterate over. The same jq filter needs to be used again, mainly
+  ## because when we retrive data we don't know how many objects are
+  ## coming in.
+  for wakaComment in "${wakaComments[@]}"; do
+    ## check if wakaComment is timezone if so break out of the loop
+    [[ "$wakaComment" != timezone ]] || break
+    ## Get the total number of lines for each data element and store it
+    ## in associative array. Since each element is on a own line the line
+    ## number represent the number of elements for each comment.
+    filterDataLinesArray+=( ["$wakaComment"NameLines]="$(jq -r ".data.$wakaComment | .[] | .name" <<< "$fetchWakaData" | wc -l)" )
+    filterDataLinesArray+=( ["$wakaComment"PercentLines]="$(jq -r ".data.$wakaComment | .[] | .percent" <<< "$fetchWakaData" | wc -l)" )
+    filterDataLinesArray+=( ["$wakaComment"TextLines]="$(jq -r ".data.$wakaComment | .[] | .text" <<< "$fetchWakaData" | wc -l)" )
+    ## test if lines per wakaComment are the same on each filtered variable, or continue with next comment
+    [[ ${filterDataLinesArray["$wakaComment"NameLines]} -eq ${filterDataLinesArray["$wakaComment"PercentLines]} && \
+      ${filterDataLinesArray["$wakaComment"NameLines]} -eq ${filterDataLinesArray["$wakaComment"TextLines]} ]] || break
+    ## Create associavtive array from data: Name, Percentage, Timestamp
+    ## loops over max. elements found per comment
+    for ((i = 0; i < "${filterDataLinesArray["${wakaComment}NameLines"]}"; i++)); do
+      filterDataNameArray+=( ["${wakaComment}Name$i"]="$(jq -r ".data.$wakaComment | .[$i] | .name" <<< "$fetchWakaData")" )
+      filterDataPercentArray+=( ["${wakaComment}Percent$i"]="$(jq -r ".data.$wakaComment | .[$i] | .percent" <<< "$fetchWakaData")" )
+      filterDataTextArray+=( ["${wakaComment}Text$i"]="$(jq -r ".data.$wakaComment | .[$i] | .text" <<< "$fetchWakaData")" )
+    done
+  done
+_writeWakaTemplate
+}
+_createWakaMarkdownBlock() {
+  ## No title, user should be able to pick own title
+  local commentArg="$1"
+  if [[ "$commentArg" == timezone ]]; then
+    markdownBlock+="$filterDataTimezone"
+    printf "%s" "$markdownBlock" && return 0
+  fi
+  for ((i = 0 ; i < "${filterDataLinesArray["${commentArg}NameLines"]}" ; i++)); do
+    ##FIXME The last time it runs you don't want \n
+    markdownBlock+="${filterDataNameArray["${commentArg}Name$i"]} ${filterDataTextArray["${commentArg}Text$i"]} ${filterDataPercentArray["${commentArg}Percent$i"]}%  \n"
+  done
+  printf "%s" "$markdownBlock"
+}
+_createWakaHtmlBlock() {
+  ##FIXME DRY maybe it's possible to only have one function
+  ## _createHtmlBlock which works for all services. And uses code it has
+  ## in common with other services.
+  local commentArg="$1"
+  local languagesHtmlBlock='<h4>💬 Languages:</h4>'
+  local editorsHtmlBlock='<h4>📝 Editors:</h4>'
+  local operating_systemsHtmlBlock='<h4>💻 Operating Systems:</h4>'
+  local projectsHtmlBlock='<h4>🌱 Projects:</h4>'
+  local timezoneHtmlBlock='<h4>🕐 Timezone:</h4>'
+  ## Indirect reference to assign variables in loop.
+  local -n htmlBlock=${commentArg}HtmlBlock
+  if [[ "$commentArg" == timezone ]]; then
+    htmlBlock+="\n<span>$filterDataTimezone</span>"
+    printf "%s" "$htmlBlock" && return 0
+  fi
+  for ((i = 0 ; i < "${filterDataLinesArray["${commentArg}NameLines"]}" ; i++)); do
+    htmlBlock+="\n<span>${filterDataNameArray["${commentArg}Name$i"]}</span>&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;<span>${filterDataTextArray["${commentArg}Text$i"]}</span>&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;<span>${filterDataPercentArray["${commentArg}Percent$i"]}%</span>"
+  done
+  printf "%s" "$htmlBlock"
+}
+_writeWakaTemplate() {
+  ##FIXME DRY maybe I can create a general _printHtmlBlocks function for
+  #all services and depending on service different parts of it execute.
+  #case "$service" in
+  #  wakatime) echo waka;;
+  #  github) echo github;;
+  #esac
+  local callFunction
+  if [[ "$flag" == "-H" ]]; then
+    callFunction="_createWakaHtmlBlock"
+  else
+    callFunction="_createWakaMarkdownBlock"
+  fi
+  for wakaComment in "${wakaComments[@]}"; do
+    content="$($callFunction $wakaComment)"
+    perl -i -0777pe "s|<!--$service-$wakaComment-start-->\s*<!--$service-$wakaComment-end-->|<!--$service-$wakaComment-start-->\n${content}\n  <!--$service-$wakaComment-end-->|s" "$template"
+  done
+  _writeReadme wakatime
+}
+############################## github func #############################
+
+########################### general func end ###########################
+_writeReadme() {                                                                
+  ## Update new API data/content into readme                                       
+  cat "$template" > "$readme"                                                      
+  [[ "$1" == wakatime ]] && _cleanUpFiles wakatime                              
+  [[ "$1" == github ]] && _cleanUpFiles github                                  
+}                                                                                  
+_cleanUpFiles() {                                                               
+  [[ "$1" == wakatime ]] && local -a comments=("${wakaComments[@]}")
+  [[ "$1" == github ]] && local -a comments=("${githubComments[@]}")                  
+  for comment in "${comments[@]}"; do                                              
+    ## remove comments from README.md                                              
+    sed -i "/<!--$service-$comment-start-->/d" "$readme"                           
+    sed -i "/<!--$service-$comment-end-->/d" "$readme"                             
+    ## remove content between comments from template                               
+    perl -i -0777pe "s/<!--$service-$comment-start-->.*<!--$service-$comment-end-->/<!--$service-$comment-start-->\n  <!--$service-$comment-end-->/s" "$template"
+  done                                                                             
+}
+_main
+
+##TODO IMPORTANT
+#
+# * take two functions from `zoo` and copy in this script
+# * queries is new file that stores all the github graphql queries
+# * make github grapql work with this one: Repositories you recently created/updated
+
+
+## github graphql api:
+## grab:
+## * Your recent contributions
+## * Your recent pull requests
+## * Forks you recently created
+## * Recent releases you contributed to
+## * Repositories you recently starred
+## * Your published gists
+## * Your latest followers
+## * Your sponsors
+#
+## * Timezone you are currently in
+## * Gather info about which language is used percentage wise in which
+## repo and create a list of top used languages from total of all repos
+## * Which day of the week you are most productive messured by the
+## amounts of commits
+## * Which time of the day you are most productive messured by the amount
+## of commits
+## * Some github stats: - amount of commits in current year, - amount of
+## public&private repos, - opted for hire, - total github storage space
+## used
+
+################################# stuff ################################
+## Remember: Variables and sed are a bit tricky. Don't quote variables that have spaces!
+#https://stackoverflow.com/questions/49461777/sed-with-variables-and-spaces
+##TODO add a percentage/progress bar to the html block to visualize the
+##percentage
+
+## User Instructions:
+## * login to wakatime.com and create an account also copy the api key
+## when you are logged in. Go to github.com to your github profile repo
+## and click on 'Settings' 'Secrets and variables' 'Actions' and add
+## go to github profile repo on website go to "settings" "secrests" add
+## "PERSONAL_WAKATIME_KEY" with your copied waka API key as value
+## * click on your profile picture in top right 'Settigngs' 'Developer
+## settings' 'Personal access tokens' 'Tokens (classic)' and create a
+## token with this scope:  .... Also safe the token somewhere safe github
+## won't show it to you after creation, copy the token and
+## add another 'secret' to your github.com profile repo. Name it
+## 'PERSONAL_GITHUB_TOKEN' and paste the your token in as the value.
+## * add the templates/templateReadme.md.tpl to your profile repo and
+## write your github.com profile page from this file, never edit the
+## README.md as it will get overwritten. Also add the html comments
+## wherever you wanted automated information to be placed.
+## * add the .github/workflows/action.yml file and paste the information
+## from this repo in there to create a working workflow.

@@ -1,0 +1,56 @@
+## Workflow to auto update README.md
+## Name of the Workflow
+name: CI to update the README.md of your github profile
+## Events to trigger Action:
+on:
+  ## If you make a manual push
+  push:
+  schedule:
+    ## If it is midnight, cronjob runs once per day
+    - cron: "0 0 * * *"
+## Jobs groups a set of actions to get executed
+jobs:
+  ## Name of first job/group with its actions
+  build:
+    runs-on: ubuntu-latest
+    ## Docker container to be pulled, the following steps are executed
+    ## within running docker container and busybox shell (cause Alpine)
+    container:
+      image: simonwoodtli/readme-writer:latest
+      ## Github Secrets to be passed to the Container as env. variables
+      env:
+        GITHUB_TOKEN: ${{ secrets.PERSONAL_GITHUB_TOKEN }}
+        WAKATIME_API_KEY: ${{ secrets.PERSONAL_WAKATIME_API_KEY }}
+        ## I think MY_SECRET is redundant
+        #MY_SECRET: ${{ secrets.MY_SECRET }}
+    ## Actual actions
+    steps:
+      ## 1. checkout mounts the content of the repo into the github
+      ## action, if you use a docker container like here it will mount it
+      ## in $GITHUB_WORKSPACE which is /__w/nameOfRepo/nameOfRepo
+      - name: Checkout Project - Mount Repo into Docker Container
+        uses: actions/checkout@v3
+      ## 2. run script
+      - name: Run Script - Update README.md
+        run: |
+          #readme-scraper /__w/readme-scraper/readme-scraper/templates/preTemplateReadme.md.tpl /__w/readme-scraper/readme-scraper/templates/README.md.tpl
+          readme-scraper templates/preTemplateReadme.md.tpl templates/README.md.tpl
+      ## 3. push update
+      - name: Git Push updated README.md
+        run: |
+          ##HOTFIX
+          git config --global --add safe.directory /__w/readme-scraper/readme-scraper
+          git config user.name readme-writer 🤖
+          git config user.email actions@github.com
+          git add .
+          git commit -m "📝 update auto-generated README.md"
+          git push origin main
+
+##HOTFIX explained: this is required until I figure out why there are two
+## owners `ntp` and `root` in $GITHUB_WORKSPACE
+## It also makes not much sense as github checkout action
+## already uses this safe.dir command itself, oh well...
+## debugging was weird until I used `git remote -v` I just got
+## no git repo errors, even though `ls -lah $GITHUB_WORKSPACE`
+## clearly showed the .git repo so it wasn't an API download but
+## the checkout action used a git clone.
