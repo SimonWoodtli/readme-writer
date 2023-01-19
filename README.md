@@ -1,6 +1,7 @@
 # readme-writer
 
 [![WIP](https://img.shields.io/badge/status-wip-red)](https://img.shields.io/badge/status-wip-red)
+[![License](https://img.shields.io/badge/license-Apache2-brightgreen.svg)](LICENSE)
 
 Once per day `readme-writer` automatically fetches the data from your wakatime and github API and updates your github.com profile page. It does so using a github workflow with `readme-writer` in a Docker container.
 
