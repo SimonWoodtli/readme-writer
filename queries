@@ -1,0 +1,254 @@
+#!/usr/bin/bash
+_printQueryUser() {
+  #userInfoQuery
+  echo '{
+  viewer {
+    login
+    id
+    }
+  }'
+}
+_printQueryReposAll() {
+  ## query to get 5 last updated repos
+  ## use this to list "currently working on"
+  echo 'query {
+  user(login: "'$user'") {
+  repositories(first: 7, orderBy: {field: PUSHED_AT, direction: DESC}, affiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER], isFork: false) {
+      edges {
+        node {
+          name
+          description
+          pushedAt
+          url
+          owner {
+            login
+          }
+          }
+        }
+      }
+    }
+  }'
+}
+_printQueryReposOwn() {
+  ## query to get 5 last updated repos
+  ## use this to list "my projects"
+  echo 'query {
+  user(login: "'$user'") {
+  repositories(first: 7, orderBy: {field: PUSHED_AT, direction: DESC}, affiliations: [OWNER], isFork: false) {
+      edges {
+        node {
+          name
+          description
+          pushedAt
+          url
+          owner {
+            login
+          }
+          }
+        }
+      }
+    }
+  }'
+}
+_printQueryPullRequests() {
+  echo 'query {
+  search(query: "user:'$user' is:merged sort:updated-desc", type: ISSUE, first: 5) {
+    edges {
+      node {
+        ... on PullRequest {
+          title
+          url
+          mergedAt
+          repository {
+            name
+            url
+            owner {
+              login
+            }
+          }
+        }
+      }
+    }
+  }
+}'
+}
+_printQueryStars() {
+  echo 'query {
+  user(login: "'$user'") {
+    starredRepositories(first: 5, orderBy: {field: STARRED_AT, direction: DESC}) {
+      edges {
+        starredAt
+        node {
+          name
+          owner {
+            login
+          }
+        }
+      }
+    }
+  }
+}'
+}
+################################# stuff ################################
+
+_printQueryXXX() {
+  #createContributedRepoQuery
+  ##not sure if I need this
+  echo 'query {
+  user(login: "'$user'") {
+    repositoriesContributedTo(last: 100, includeUserRepositories: true) {
+      nodes {
+        isFork
+        name
+        owner {
+          login
+          }
+        }
+      }
+    }
+  }'
+}
+
+_printQueryXXX2() {
+  #createCommittedDateQuery
+  echo 'query {
+  repository(owner: "$owner", name: "$name") {
+    defaultBranchRef {
+      target {
+        ... on Commit {
+          history(first: 100, author: { id: "$id" }) {
+            edges {
+              node {
+                committedDate
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }'
+}
+_printQueryLanguages() {
+  #repositoryListQuery
+  #generate_language_per_repo: waka-readme-stats
+  echo '{
+  user(login: "'$user'") {
+    repositories(orderBy: {field: CREATED_AT, direction: ASC}, last: 100, affiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER], isFork: false) {
+      totalCount
+      edges {
+        node {
+          object(expression:"master") {
+                ... on Commit {
+                history (author: { id: "'$id'" }){
+                totalCount
+                    }
+                }
+                }
+          primaryLanguage {
+            color
+            name
+            id
+          }
+          stargazers {
+            totalCount
+          }
+          collaborators {
+            totalCount
+          }
+          createdAt
+          name
+          owner {
+            id
+            login
+          }
+          nameWithOwner
+        }
+      }
+    }
+    location
+    createdAt
+    name
+    }
+  }'
+}
+#_printQueryReposOwn() {
+## This works just fine, but to make the processing/filtering easier I
+## choose the same query layout that reposAll has.
+   ## query to get 5 last updated repos
+#  ## use this to list "my projects"
+#  echo 'query {
+#  search(query: "user:'$user' sort:updated-desc is:fork:false",
+#  type: REPOSITORY, first: 5) {
+#    edges {
+#      node {
+#        ... on Repository {
+#          name
+#          description
+#          pushedAt
+#        }
+#      }
+#    }
+#  }
+#}'
+#}
+#_printQueryPullRequestsAll() {
+## This includes the pull requests from other users if they collaborate
+## on a repo that the $user also does.
+#  echo 'query {
+#  user(login: "'$user'") {
+#    repositories(first: 100, affiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER], isFork: false) {
+#      edges {
+#        node {
+#          name
+#          pullRequests(first: 100, states: [OPEN, CLOSED, MERGED], orderBy: {field: CREATED_AT, direction: DESC}) {
+#            edges {
+#              node {
+#                title
+#                createdAt
+#                updatedAt
+#                state
+#                url
+#                author {
+#                  login
+#                }
+#              }
+#            }
+#          }
+#        }
+#      }
+#    }
+#  }
+#}'
+#}
+#_printQueryPullRequestsAll() {
+## This includes the pull requests from other users if they collaborate
+## on a repo that the $user also does.
+#  echo 'query {
+#  viewer {
+#    repositories(first: 100) {
+#      nodes {
+#        name
+#        pullRequests(first: 5, states: [MERGED], orderBy: {field: CREATED_AT, direction: DESC}) {
+#          nodes {
+#            number
+#            url
+#            state
+#            mergedAt
+#            title
+#            reviews(last: 100) {
+#              nodes {
+#                author {
+#                  login
+#                }
+#                state
+#              }
+#            }
+#          }
+#        }
+#      }
+#    }
+#  }
+#}'
+#}
+#

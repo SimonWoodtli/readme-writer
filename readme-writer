@@ -106,31 +106,59 @@ _fetchGithubData() {
   #different data.
   local -A fetchGithubData=()
   for githubComment in "${githubComments[@]}"; do
-    echo $githubComment
     case $githubComment in
-      languages) echo yes1;;
       projectsOwn) fetchGithubData+=( ["$githubComment"]="$(_queryGithubData _printQueryReposOwn)" );;
       projectsAll) fetchGithubData+=( ["$githubComment"]="$(_queryGithubData _printQueryReposAll)" );;
+      pullRequests) fetchGithubData+=( ["$githubComment"]="$(_queryGithubData _printQueryPullRequests)" );;
+
     esac
   done
-  #echo "${fetchGithubData[projectsAll]}"
+  echo "${fetchGithubData[pullRequests]}"
   _filterGithubData
 }
 _filterGithubData() {
   local -A filterGithubName
   local -A filterGithubTimestamp
   local -A filterGithubDescription
+  local -A filterGithubTitle
+  local owner
+  local urlMerge
+  local urlRepo
+  #local -A filterGithubOwner
   local -a filter
   for githubComment in "${githubComments[@]}"; do
-    for ((i = 0; i < 5; i++)); do
+    for ((i = 0; i < 7; i++)); do
       case "$githubComment" in
-        projectsOwn) 
-          filter=(".data.search.edges[$i]" ".node")
+        projectsOwn|projectsAll) filter=(".data.user.repositories.edges[$i]" ".node")
+          [[ "$(jq -r "${filter[0]} | ${filter[1]}.name" <<< "${fetchGithubData["$githubComment"]}")" == $user ]] && continue
+          [[ "$(jq -r "${filter[0]} | ${filter[1]}.name" <<< "${fetchGithubData["$githubComment"]}")" == zet ]] && continue
+          #filter=(".data.search.edges[$i]" ".node")
+          owner="$(jq -r "${filter[0]} | ${filter[1]}.owner.login" <<< "${fetchGithubData["$githubComment"]}")"
+          urlRepo="$(jq -r "${filter[0]} | ${filter[1]}.url" <<< "${fetchGithubData["$githubComment"]}")"
           filterGithubName+=( ["${githubComment}$i"]="$(jq -r "${filter[0]} | ${filter[1]}.name" <<< "${fetchGithubData["$githubComment"]}")" )
-          filterGithubName["${githubComment}$i"]="[$user/${filterGithubName["${githubComment}$i"]}](https://github.com/$user/${filterGithubName["${githubComment}$i"]})"
+          filterGithubName["${githubComment}$i"]="[$owner/${filterGithubName["${githubComment}$i"]}]($urlRepo)"
           filterGithubDescription+=( ["${githubComment}$i"]="$(jq -r "${filter[0]} | ${filter[1]}.description" <<< "${fetchGithubData["$githubComment"]}")" )
           filterGithubTimestamp+=( ["${githubComment}$i"]="$(jq -r "${filter[0]} | ${filter[1]}.pushedAt" <<< "${fetchGithubData["$githubComment"]}")" )
           filterGithubTimestamp["${githubComment}$i"]="$(_createGithubTimeAgo ${filterGithubTimestamp["${githubComment}$i"]})";;
+
+        pullRequests) filter=(".data.search.edges[$i]" ".node")
+          [[ $i == 5 ]] && break
+          urlMerge="$(jq -r "${filter[0]} | ${filter[1]}.url" <<< "${fetchGithubData["$githubComment"]}")"
+          urlRepo="$(jq -r "${filter[0]} | ${filter[1]}.repository.url" <<< "${fetchGithubData["$githubComment"]}")"
+          owner="$(jq -r "${filter[0]} | ${filter[1]}.repository.owner.login" <<< "${fetchGithubData["$githubComment"]}")"
+          filterGithubName+=( ["${githubComment}$i"]="$(jq -r "${filter[0]} | ${filter[1]}.repository.name" <<< "${fetchGithubData["$githubComment"]}")" )
+          filterGithubName["${githubComment}$i"]="[$owner/${filterGithubName["${githubComment}$i"]}]($urlRepo)"
+          filterGithubTitle+=( ["${githubComment}$i"]="$(jq -r "${filter[0]} | ${filter[1]}.title" <<< "${fetchGithubData["$githubComment"]}")" )
+          filterGithubTitle["${githubComment}$i"]="[${filterGithubTitle["${githubComment}$i"]}]($urlMerge)"
+          filterGithubTimestamp+=( ["${githubComment}$i"]="$(jq -r "${filter[0]} | ${filter[1]}.mergedAt" <<< "${fetchGithubData["$githubComment"]}")" )
+          filterGithubTimestamp["${githubComment}$i"]="$(_createGithubTimeAgo ${filterGithubTimestamp["${githubComment}$i"]})";;
+
+          #url="$(jq -r "${filter[0]}" <<< "${fetchGithubData["$githubComment"]}")"
+          #url="$(jq -r ".data.search.edges[$i] | .node.url" <<< "${fetchGithubData["$githubComment"]}")"
+          #echo $urlMerge
+          #echo $urlRepo;;
+
+
       esac
     done
   done
@@ -150,10 +178,18 @@ _filterGithubData() {
 _createGithubMarkdownBlock() {
   local commentArg="$1"
   local markdownBlock
-  for ((i = 0; i < 5; i++)); do
-    ##TODO here needs to be a case to format the markdownBlock depending
-    #on whiich $commentArg is given
-    markdownBlock+="* ${filterGithubName["${commentArg}$i"]} - ${filterGithubDescription["${commentArg}$i"]} (${filterGithubTimestamp["${commentArg}$i"]})\n"
+  local -i empty=0
+  for ((i = 0; i < 7; i++)); do
+    case "$commentArg" in
+      projectsOwn|projectsAll) ## if empty because either name is zet, or $user skip current iteration
+        [[ -n "${filterGithubName["${commentArg}$i"]}" ]] && empty+=1 || continue
+        markdownBlock+="* ${filterGithubName["${commentArg}$i"]} - ${filterGithubDescription["${commentArg}$i"]} (${filterGithubTimestamp["${commentArg}$i"]})\n"
+        ## make sure in total only 5 lines get created, as soon as reached
+        ## break out of loop
+        [[ $i == 4 || $i == 5 ]] && [[ $empty == 5 ]] && break;;
+        pullRequests) markdownBlock+="* ${filterGithubTitle["${commentArg}$i"]} on ${filterGithubName["${commentArg}$i"]} (${filterGithubTimestamp["${commentArg}$i"]})\n"
+          [[ $i == 4 ]] && break;;
+    esac
   done
   printf "%s" "$markdownBlock"
 }
@@ -166,8 +202,10 @@ _writeGithubTemplate() {
   #else
   #  callFunction="_createGithubMarkdownBlock"
   #fi
+  #
   for githubComment in "${githubComments[@]}"; do
     #content="$($callFunction $githubComment)"
+    #_createGithubMarkdownBlock $githubComment
     content="$(_createGithubMarkdownBlock $githubComment)"
     perl -i -0777pe "s@<!--$service-$githubComment-start-->\s*<!--$service-$githubComment-end-->@<!--$service-$githubComment-start-->\n${content}\n  <!--$service-$githubComment-end-->@s" "$template"
   done
