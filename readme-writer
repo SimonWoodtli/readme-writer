@@ -1,8 +1,8 @@
 #!/usr/bin/bash
+## set the personal access token & key to github env. var secret
 #declare wakaKey="$PERSONAL_WAKATIME_KEY"
 #declare githubKey="$PERSONAL_GITHUB_TOKEN"
 source api-keys #Temporary for testing the script
-source queries
 # dependencies: bash, sed, jq, printf, perl
 declare flag="$1"
 declare template="$2"
@@ -16,14 +16,49 @@ fi
 ## Check if template and readme are right format or exit
 [[ "$template" == *.tpl ]] || exit 1
 [[ "$readme" == *.md ]] || exit 1
+
+##TODO IMPORTANT
+
+## github graphql api:
+## grab:
+## * projectsAll: Your recent contributions
+## * projectsOwn: Your recent projects
+## * pullRequests: Your recent pull requests
+## * forks: Forks you recently created
+## * stars: Repositories you recently starred
+## * gists: Your published gists
+## * followers: Your latest followers
+## * sponsors: Your sponsors
+## * ??: (Recent releases you contributed to), not sure if I want that
+#
+## * languages: Gather info about which language is used percentage wise in which
+## repo and create a list of top used languages from total of all repos
+## * productiveDay: Which day of the week you are most productive messured by the
+## amounts of commits
+## * productiveTime: Which time of the day you are most productive messured by the amount
+## of commits
+## * stats: some github stats - amount of commits in current year, - amount of
+## public&private repos, - opted for hire, - total github storage space
+## used
 ########################## general func start ##########################
 _main() {
-  local -a wakaComments=($(_checkHtmlComments wakatime))
-  echo "start wakatime"
-  [[ -z "${wakaComments[@]}" ]] || { service="wakatime"; _fetchWakaData; }
+  #local -a wakaComments=($(_checkHtmlComments wakatime))
+  #echo "start wakatime"
+  #[[ -z "${wakaComments[@]}" ]] || { service="wakatime"; _fetchWakaData; }
   echo "start github"
   local -a githubComments=($(_checkHtmlComments github))
-  #[[ -z "${githubComments[@]}" ]] || { service="github"; _fetchGithubData; }
+  if [[ -n "${githubComments[@]}" ]]; then 
+    source queries
+    declare service="github" 
+    ## Get username and id
+    declare userData="$(_queryGithubData _printQueryUser)"
+    declare user="$(jq -r .data.viewer.login <<< "$userData")"
+    declare id="$(jq -r .data.viewer.id <<< "$userData")"
+    ## difference between waka REST and github graphql, github 
+    #requires already a looping over comments, because multiple queries
+    #are needed
+    _fetchGithubData
+  fi
 }
 _checkHtmlComments() {
   local service=$1
@@ -35,7 +70,8 @@ _checkHtmlComments() {
     wakatime) local -a lookupComments=("languages" "editors" "operating_systems" "projects" "timezone");;
     ## since graphql is used here, the keyword could be anything as queries are
     ## needed and filtering with jq works with more generic terms.
-    github) local -a lookupComments=("languages" "projects");; #update this whenever you add more queries
+    github) local -a lookupComments=("projectsOwn" "projectsAll" "pullRequests" "forks" "stars" "gists" "followers" "sponsors" "timezone" "languages" "productiveDay" "productiveTime" "stats");;
+## * timezone: Timezone you are currently in
     ## future REST APIs should also be implemented with a keyword that
     ## exists in the received JSON and is represented in the html comment.
   esac
@@ -51,6 +87,154 @@ _checkHtmlComments() {
   done
   echo "${commentsArray[@]}"
 }
+############################## github func #############################
+_queryGithubData() {
+  ## query: `_queryGithubData _printQueryXXX`, $1 = printQueryXXX func,
+  ## stored in 'queries' file
+  query="$($1)"
+  ## this echo $query without quotes is needed to get query on a single
+  ## line, sed is needed to escape any double quotes in the query string
+  ## both those things are needed for the curl command to work
+  query="$(echo $query | sed 's/"/\\"/g' )"
+  curl -s -H 'Content-Type: application/json' \
+     -H "Authorization: bearer $githubKey" \
+     -d "{ \"query\": \"$query\"}" https://api.github.com/graphql | jq '.'
+}
+
+_fetchGithubData() {
+  ##TODO create a  loop to loop over all queries needed and fetch the
+  #different data.
+  local -A fetchGithubData=()
+  for githubComment in "${githubComments[@]}"; do
+    case $githubComment in
+      projectsOwn) fetchGithubData+=( ["$githubComment"]="$(_queryGithubData _printQueryReposOwn)" );;
+      projectsAll) fetchGithubData+=( ["$githubComment"]="$(_queryGithubData _printQueryReposAll)" );;
+      pullRequests) fetchGithubData+=( ["$githubComment"]="$(_queryGithubData _printQueryPullRequests)" );;
+
+    esac
+  done
+  echo "${fetchGithubData[pullRequests]}"
+  _filterGithubData
+}
+_filterGithubData() {
+  local -A filterGithubName
+  local -A filterGithubTimestamp
+  local -A filterGithubDescription
+  local -A filterGithubTitle
+  local owner
+  local urlMerge
+  local urlRepo
+  #local -A filterGithubOwner
+  local -a filter
+  for githubComment in "${githubComments[@]}"; do
+    for ((i = 0; i < 7; i++)); do
+      case "$githubComment" in
+        projectsOwn|projectsAll) filter=(".data.user.repositories.edges[$i]" ".node")
+          [[ "$(jq -r "${filter[0]} | ${filter[1]}.name" <<< "${fetchGithubData["$githubComment"]}")" == $user ]] && continue
+          [[ "$(jq -r "${filter[0]} | ${filter[1]}.name" <<< "${fetchGithubData["$githubComment"]}")" == zet ]] && continue
+          #filter=(".data.search.edges[$i]" ".node")
+          owner="$(jq -r "${filter[0]} | ${filter[1]}.owner.login" <<< "${fetchGithubData["$githubComment"]}")"
+          urlRepo="$(jq -r "${filter[0]} | ${filter[1]}.url" <<< "${fetchGithubData["$githubComment"]}")"
+          filterGithubName+=( ["${githubComment}$i"]="$(jq -r "${filter[0]} | ${filter[1]}.name" <<< "${fetchGithubData["$githubComment"]}")" )
+          filterGithubName["${githubComment}$i"]="[$owner/${filterGithubName["${githubComment}$i"]}]($urlRepo)"
+          filterGithubDescription+=( ["${githubComment}$i"]="$(jq -r "${filter[0]} | ${filter[1]}.description" <<< "${fetchGithubData["$githubComment"]}")" )
+          filterGithubTimestamp+=( ["${githubComment}$i"]="$(jq -r "${filter[0]} | ${filter[1]}.pushedAt" <<< "${fetchGithubData["$githubComment"]}")" )
+          filterGithubTimestamp["${githubComment}$i"]="$(_createGithubTimeAgo ${filterGithubTimestamp["${githubComment}$i"]})";;
+
+        pullRequests) filter=(".data.search.edges[$i]" ".node")
+          [[ $i == 5 ]] && break
+          urlMerge="$(jq -r "${filter[0]} | ${filter[1]}.url" <<< "${fetchGithubData["$githubComment"]}")"
+          urlRepo="$(jq -r "${filter[0]} | ${filter[1]}.repository.url" <<< "${fetchGithubData["$githubComment"]}")"
+          owner="$(jq -r "${filter[0]} | ${filter[1]}.repository.owner.login" <<< "${fetchGithubData["$githubComment"]}")"
+          filterGithubName+=( ["${githubComment}$i"]="$(jq -r "${filter[0]} | ${filter[1]}.repository.name" <<< "${fetchGithubData["$githubComment"]}")" )
+          filterGithubName["${githubComment}$i"]="[$owner/${filterGithubName["${githubComment}$i"]}]($urlRepo)"
+          filterGithubTitle+=( ["${githubComment}$i"]="$(jq -r "${filter[0]} | ${filter[1]}.title" <<< "${fetchGithubData["$githubComment"]}")" )
+          filterGithubTitle["${githubComment}$i"]="[${filterGithubTitle["${githubComment}$i"]}]($urlMerge)"
+          filterGithubTimestamp+=( ["${githubComment}$i"]="$(jq -r "${filter[0]} | ${filter[1]}.mergedAt" <<< "${fetchGithubData["$githubComment"]}")" )
+          filterGithubTimestamp["${githubComment}$i"]="$(_createGithubTimeAgo ${filterGithubTimestamp["${githubComment}$i"]})";;
+
+          #url="$(jq -r "${filter[0]}" <<< "${fetchGithubData["$githubComment"]}")"
+          #url="$(jq -r ".data.search.edges[$i] | .node.url" <<< "${fetchGithubData["$githubComment"]}")"
+          #echo $urlMerge
+          #echo $urlRepo;;
+
+
+      esac
+    done
+  done
+  _writeGithubTemplate
+
+  ## Array keys:
+  # Name = Name of Repo
+  # Description = Desc. of Repo
+  # Timestamp = Time ago since updated
+  #
+  #Projects*: Name Description Timestamp
+  #Stars: Name Description Timestamp
+  #Sponsors: Name Timestamp
+  #PullReq: PullReqCommitMsg Name
+  #...
+}
+_createGithubMarkdownBlock() {
+  local commentArg="$1"
+  local markdownBlock
+  local -i empty=0
+  for ((i = 0; i < 7; i++)); do
+    case "$commentArg" in
+      projectsOwn|projectsAll) ## if empty because either name is zet, or $user skip current iteration
+        [[ -n "${filterGithubName["${commentArg}$i"]}" ]] && empty+=1 || continue
+        markdownBlock+="* ${filterGithubName["${commentArg}$i"]} - ${filterGithubDescription["${commentArg}$i"]} (${filterGithubTimestamp["${commentArg}$i"]})\n"
+        ## make sure in total only 5 lines get created, as soon as reached
+        ## break out of loop
+        [[ $i == 4 || $i == 5 ]] && [[ $empty == 5 ]] && break;;
+        pullRequests) markdownBlock+="* ${filterGithubTitle["${commentArg}$i"]} on ${filterGithubName["${commentArg}$i"]} (${filterGithubTimestamp["${commentArg}$i"]})\n"
+          [[ $i == 4 ]] && break;;
+    esac
+  done
+  printf "%s" "$markdownBlock"
+}
+_writeGithubTemplate() {
+  ## Currently there are no plans of adding _createGithubHtmlBlock(),
+  ## because in my current README.md markdown works already.
+  #local callFunction
+  #if [[ "$flag" == "-H" ]]; then
+  #  callFunction="_createGithubHtmlBlock"
+  #else
+  #  callFunction="_createGithubMarkdownBlock"
+  #fi
+  #
+  for githubComment in "${githubComments[@]}"; do
+    #content="$($callFunction $githubComment)"
+    #_createGithubMarkdownBlock $githubComment
+    content="$(_createGithubMarkdownBlock $githubComment)"
+    perl -i -0777pe "s@<!--$service-$githubComment-start-->\s*<!--$service-$githubComment-end-->@<!--$service-$githubComment-start-->\n${content}\n  <!--$service-$githubComment-end-->@s" "$template"
+  done
+  _writeReadme github
+}
+_createGithubTimeAgo() {
+  local timestamp="$1"
+  local pushedTimeSec="$(date -d "$timestamp" +%s)"
+  local currentTimeSec=$(date -u +%s)
+  local deltaTimeDays="$(((currentTimeSec - pushedTimeSec) / 86400))"
+  case $deltaTimeDays in
+    0) deltaTimeHours="$(((currentTimeSec - pushedTimeSec) / 3600))"
+      echo "$deltaTimeHours hours ago";;
+    1) echo "$deltaTimeDays day ago";;
+    [2-7]) echo "$deltaTimeDays days ago";;
+    [8-9]|1[0-4]) echo "1 week ago";;
+    1[5-9]|2[0-1]) echo "2 weeks ago";;
+    2[2-8]) echo "3 weeks ago";;
+    29|3[0-9]|4[0-9]) echo "1 month ago";;
+    ##TODO if more than 12 months make it 1 year, if more than 24
+    #months make it 2 years and so on...
+    *) ## round months up if remainder is higher than half a months days
+      if [[ "$deltaTimeDays%30" -ge 15 ]]; then
+        echo "$(((deltaTimeDays/30) + 1)) months ago"
+      else
+        echo "$((deltaTimeDays/30)) months ago"
+      fi;;
+  esac
+}
 ############################# wakatime func ############################
 _fetchWakaData() {
   local fetchWakaData=$(curl https://wakatime.com/api/v1/users/current/stats/last_7_days?api_key="$wakaKey" | jq '.')
@@ -58,11 +242,11 @@ _fetchWakaData() {
 }
 _filterWakaData() {
   ##  Declare local variables: strings, integers and arrays
-  local -A filterDataNameArray=()
-  local -A filterDataPercentArray=()
-  local -A filterDataTextArray=()
-  local -A filterDataLinesArray=()
-  local filterDataTimezone="$(jq -r ".data.timezone" <<< "$fetchWakaData")"
+  local -A filterWakaName=()
+  local -A filterWakaPercent=()
+  local -A filterWakaText=()
+  local -A filterWakaLines=()
+  local filterWakaTimezone="$(jq -r ".data.timezone" <<< "$fetchWakaData")"
   ## Create associative arrays with data, use comment as outer loop and
   ## line number as inner loop. Uses line number  as max. index to
   ## iterate over. The same jq filter needs to be used again, mainly
@@ -74,18 +258,18 @@ _filterWakaData() {
     ## Get the total number of lines for each data element and store it
     ## in associative array. Since each element is on a own line the line
     ## number represent the number of elements for each comment.
-    filterDataLinesArray+=( ["$wakaComment"NameLines]="$(jq -r ".data.$wakaComment | .[] | .name" <<< "$fetchWakaData" | wc -l)" )
-    filterDataLinesArray+=( ["$wakaComment"PercentLines]="$(jq -r ".data.$wakaComment | .[] | .percent" <<< "$fetchWakaData" | wc -l)" )
-    filterDataLinesArray+=( ["$wakaComment"TextLines]="$(jq -r ".data.$wakaComment | .[] | .text" <<< "$fetchWakaData" | wc -l)" )
+    filterWakaLines+=( ["$wakaComment"NameLines]="$(jq -r ".data.$wakaComment | .[] | .name" <<< "$fetchWakaData" | wc -l)" )
+    filterWakaLines+=( ["$wakaComment"PercentLines]="$(jq -r ".data.$wakaComment | .[] | .percent" <<< "$fetchWakaData" | wc -l)" )
+    filterWakaLines+=( ["$wakaComment"TextLines]="$(jq -r ".data.$wakaComment | .[] | .text" <<< "$fetchWakaData" | wc -l)" )
     ## test if lines per wakaComment are the same on each filtered variable, or continue with next comment
-    [[ ${filterDataLinesArray["$wakaComment"NameLines]} -eq ${filterDataLinesArray["$wakaComment"PercentLines]} && \
-      ${filterDataLinesArray["$wakaComment"NameLines]} -eq ${filterDataLinesArray["$wakaComment"TextLines]} ]] || break
+    [[ ${filterWakaLines["$wakaComment"NameLines]} -eq ${filterWakaLines["$wakaComment"PercentLines]} && \
+      ${filterWakaLines["$wakaComment"NameLines]} -eq ${filterWakaLines["$wakaComment"TextLines]} ]] || break
     ## Create associavtive array from data: Name, Percentage, Timestamp
     ## loops over max. elements found per comment
-    for ((i = 0; i < "${filterDataLinesArray["${wakaComment}NameLines"]}"; i++)); do
-      filterDataNameArray+=( ["${wakaComment}Name$i"]="$(jq -r ".data.$wakaComment | .[$i] | .name" <<< "$fetchWakaData")" )
-      filterDataPercentArray+=( ["${wakaComment}Percent$i"]="$(jq -r ".data.$wakaComment | .[$i] | .percent" <<< "$fetchWakaData")" )
-      filterDataTextArray+=( ["${wakaComment}Text$i"]="$(jq -r ".data.$wakaComment | .[$i] | .text" <<< "$fetchWakaData")" )
+    for ((i = 0; i < "${filterWakaLines["${wakaComment}NameLines"]}"; i++)); do
+      filterWakaName+=( ["${wakaComment}Name$i"]="$(jq -r ".data.$wakaComment | .[$i] | .name" <<< "$fetchWakaData")" )
+      filterWakaPercent+=( ["${wakaComment}Percent$i"]="$(jq -r ".data.$wakaComment | .[$i] | .percent" <<< "$fetchWakaData")" )
+      filterWakaText+=( ["${wakaComment}Text$i"]="$(jq -r ".data.$wakaComment | .[$i] | .text" <<< "$fetchWakaData")" )
     done
   done
 _writeWakaTemplate
@@ -93,13 +277,14 @@ _writeWakaTemplate
 _createWakaMarkdownBlock() {
   ## No title, user should be able to pick own title
   local commentArg="$1"
+  ## activate this and test if it works wit initiated variable `local markdownBlock`
   if [[ "$commentArg" == timezone ]]; then
-    markdownBlock+="$filterDataTimezone"
+    markdownBlock+="$filterWakaTimezone"
     printf "%s" "$markdownBlock" && return 0
   fi
-  for ((i = 0 ; i < "${filterDataLinesArray["${commentArg}NameLines"]}" ; i++)); do
+  for ((i = 0 ; i < "${filterWakaLines["${commentArg}NameLines"]}" ; i++)); do
     ##FIXME The last time it runs you don't want \n
-    markdownBlock+="${filterDataNameArray["${commentArg}Name$i"]} ${filterDataTextArray["${commentArg}Text$i"]} ${filterDataPercentArray["${commentArg}Percent$i"]}%  \n"
+    markdownBlock+="${filterWakaName["${commentArg}Name$i"]} ${filterWakaText["${commentArg}Text$i"]} ${filterWakaPercent["${commentArg}Percent$i"]}%  \n"
   done
   printf "%s" "$markdownBlock"
 }
@@ -116,11 +301,11 @@ _createWakaHtmlBlock() {
   ## Indirect reference to assign variables in loop.
   local -n htmlBlock=${commentArg}HtmlBlock
   if [[ "$commentArg" == timezone ]]; then
-    htmlBlock+="\n<span>$filterDataTimezone</span>"
+    htmlBlock+="\n<span>$filterWakaTimezone</span>"
     printf "%s" "$htmlBlock" && return 0
   fi
-  for ((i = 0 ; i < "${filterDataLinesArray["${commentArg}NameLines"]}" ; i++)); do
-    htmlBlock+="\n<span>${filterDataNameArray["${commentArg}Name$i"]}</span>&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;<span>${filterDataTextArray["${commentArg}Text$i"]}</span>&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;<span>${filterDataPercentArray["${commentArg}Percent$i"]}%</span>"
+  for ((i = 0 ; i < "${filterWakaLines["${commentArg}NameLines"]}" ; i++)); do
+    htmlBlock+="\n<span>${filterWakaName["${commentArg}Name$i"]}</span>&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;<span>${filterWakaText["${commentArg}Text$i"]}</span>&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;<span>${filterWakaPercent["${commentArg}Percent$i"]}%</span>"
   done
   printf "%s" "$htmlBlock"
 }
@@ -143,8 +328,6 @@ _writeWakaTemplate() {
   done
   _writeReadme wakatime
 }
-############################## github func #############################
-
 ########################### general func end ###########################
 _writeReadme() {                                                                
   ## Update new API data/content into readme                                       
@@ -165,34 +348,8 @@ _cleanUpFiles() {
 }
 _main
 
-##TODO IMPORTANT
-#
-# * take two functions from `zoo` and copy in this script
-# * queries is new file that stores all the github graphql queries
-# * make github grapql work with this one: Repositories you recently created/updated
+exit
 
-
-## github graphql api:
-## grab:
-## * Your recent contributions
-## * Your recent pull requests
-## * Forks you recently created
-## * Recent releases you contributed to
-## * Repositories you recently starred
-## * Your published gists
-## * Your latest followers
-## * Your sponsors
-#
-## * Timezone you are currently in
-## * Gather info about which language is used percentage wise in which
-## repo and create a list of top used languages from total of all repos
-## * Which day of the week you are most productive messured by the
-## amounts of commits
-## * Which time of the day you are most productive messured by the amount
-## of commits
-## * Some github stats: - amount of commits in current year, - amount of
-## public&private repos, - opted for hire, - total github storage space
-## used
 
 ################################# stuff ################################
 ## Remember: Variables and sed are a bit tricky. Don't quote variables that have spaces!
