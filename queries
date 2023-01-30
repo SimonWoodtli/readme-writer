@@ -1,10 +1,13 @@
 #!/usr/bin/bash
+##TODO Refactor: 'nameWithOwner' is very useful it gives you something like "SimonWoodtli/projects"
+## implement it where you see fit
 _printQueryUser() {
   #userInfoQuery
   echo '{
   viewer {
     login
     id
+    isHireable
     }
   }'
 }
@@ -50,6 +53,18 @@ _printQueryReposOwn() {
     }
   }'
 }
+_printQueryReposTotal() {
+  echo 'query {
+  user(login: "'$user'") {
+    publicRepositories: repositories(privacy: PUBLIC) {
+      totalCount
+    }
+    privateRepositories: repositories(privacy: PRIVATE) {
+      totalCount
+    }
+  }
+}'
+}
 _printQueryPullRequests() {
   echo 'query {
   search(query: "user:'$user' is:merged sort:updated-desc", type: ISSUE, first: 5) {
@@ -72,6 +87,50 @@ _printQueryPullRequests() {
   }
 }'
 }
+_printQueryZet() {
+  ##FIXME name: zet in repo(), needs to be variable, different users
+  #might have different names for their zet repo
+  echo 'query {
+  repository(owner: "'$user'", name: "zet") {
+    name
+    refs(
+      refPrefix: "refs/tags/",
+      last: 5,
+      orderBy: {field: TAG_COMMIT_DATE, direction: DESC}
+    ) {
+      edges {
+        node {
+          name
+          target {
+            ... on Commit {
+              oid
+              treeUrl
+              message
+              committedDate
+            }
+          }
+        }
+      }
+    }
+  }
+}'
+}
+_printQueryForks() {
+  echo 'query {
+  user(login: "'$user'") {
+    repositories(first: 5, isFork: true, orderBy: {field: CREATED_AT, direction: DESC}) {
+      edges {
+        node {
+          name
+          createdAt
+          url
+          description
+        }
+      }
+    }
+  }
+}'
+}
 _printQueryStars() {
   echo 'query {
   user(login: "'$user'") {
@@ -80,6 +139,8 @@ _printQueryStars() {
         starredAt
         node {
           name
+          description
+          url
           owner {
             login
           }
@@ -89,37 +150,98 @@ _printQueryStars() {
   }
 }'
 }
-################################# stuff ################################
-
-_printQueryXXX() {
-  #createContributedRepoQuery
-  ##not sure if I need this
+_printQueryGists() {
   echo 'query {
   user(login: "'$user'") {
-    repositoriesContributedTo(last: 100, includeUserRepositories: true) {
-      nodes {
-        isFork
-        name
-        owner {
-          login
+    gists(first: 5, orderBy: {field: CREATED_AT, direction: DESC}) {
+      edges {
+        node {
+          createdAt
+          description
+          url
+          files(limit: 1) {
+            name
           }
         }
       }
     }
-  }'
+  }
+}'
 }
-
-_printQueryXXX2() {
-  #createCommittedDateQuery
+_printQueryFollowers() {
   echo 'query {
-  repository(owner: "$owner", name: "$name") {
-    defaultBranchRef {
-      target {
-        ... on Commit {
-          history(first: 100, author: { id: "$id" }) {
-            edges {
-              node {
-                committedDate
+  user(login: "'$user'") {
+    followers(last: 5) {
+      edges {
+        node {
+          login
+          url
+          company
+        }
+      }
+    }
+  }
+}'
+}
+_printQuerySponsors() {
+  echo '{
+  user(login: "'$user'") {
+    sponsorshipsAsMaintainer(first: 5, orderBy: {field: CREATED_AT, direction: DESC}) {
+      totalCount
+      nodes {
+        createdAt
+        privacyLevel
+        sponsorEntity {
+          ... on User {
+            login
+            url
+          }
+          ... on Organization {
+            login
+            url
+          }
+        }
+      }
+    }
+  }
+}'
+}
+_printQueryLanguages() {
+  echo '{
+  search(query: "user:'$user'", type: REPOSITORY, first: 100) {
+    repositoryCount
+    edges {
+      node {
+        ... on Repository {
+          name
+          nameWithOwner
+          primaryLanguage {
+            name
+          }
+        }
+      }
+    }
+  }
+}'
+}
+_printQueryProductivity() {
+  echo 'query {
+  user(login: "'$user'") {
+    repositories(first: 100, affiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]) {
+      totalCount
+      edges {
+        node {
+          nameWithOwner
+          defaultBranchRef {
+            target {
+              ... on Commit {
+                history(first: 100, author: { id: "'$id'" }, since: "'$yearMonth'-01T00:00:00Z") {
+                  totalCount
+                  edges {
+                    node {
+                      committedDate
+                    }
+                  }
                 }
               }
             }
@@ -127,51 +249,73 @@ _printQueryXXX2() {
         }
       }
     }
-  }'
+  }
+}'
 }
-_printQueryLanguages() {
+
+################################# stuff ################################
+#
+#_printQueryLanguages() {
+#  echo 'query {
+#  user(login: "'$user'") {
+#    repositories(orderBy: {field: CREATED_AT, direction: DESC}, first: 100, affiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER], isFork: false) {
+#      totalCount
+#      edges {
+#        node {
+#          primaryLanguage {
+#            name
+#          }
+#          name
+#          nameWithOwner
+#        }
+#      }
+#    }
+#  }
+#}'
+#}
+#_printQueryLanguages() {
   #repositoryListQuery
   #generate_language_per_repo: waka-readme-stats
-  echo '{
-  user(login: "'$user'") {
-    repositories(orderBy: {field: CREATED_AT, direction: ASC}, last: 100, affiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER], isFork: false) {
-      totalCount
-      edges {
-        node {
-          object(expression:"master") {
-                ... on Commit {
-                history (author: { id: "'$id'" }){
-                totalCount
-                    }
-                }
-                }
-          primaryLanguage {
-            color
-            name
-            id
-          }
-          stargazers {
-            totalCount
-          }
-          collaborators {
-            totalCount
-          }
-          createdAt
-          name
-          owner {
-            id
-            login
-          }
-          nameWithOwner
-        }
-      }
-    }
-    location
-    createdAt
-    name
-    }
-  }'
-}
+#  echo '{
+#  user(login: "'$user'") {
+#    repositories(orderBy: {field: CREATED_AT, direction: ASC}, last: 100, affiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER], isFork: false) {
+#      totalCount
+#      edges {
+#        node {
+#          object(expression:"main") {
+#                ... on Commit {
+#                history (author: { id: "'$id'" }){
+#                totalCount
+#                    }
+#                }
+#                }
+#          primaryLanguage {
+#            color
+#            name
+#            id
+#          }
+#          stargazers {
+#            totalCount
+#          }
+#          collaborators {
+#            totalCount
+#          }
+#          createdAt
+#          name
+#          owner {
+#            id
+#            login
+#          }
+#          nameWithOwner
+#        }
+#      }
+#    }
+#    location
+#    createdAt
+#    name
+#    }
+#  }'
+#}
 #_printQueryReposOwn() {
 ## This works just fine, but to make the processing/filtering easier I
 ## choose the same query layout that reposAll has.
@@ -252,3 +396,38 @@ _printQueryLanguages() {
 #}'
 #}
 #
+#_printQueryZet() {
+#  echo 'query {
+#  repository(owner: "'$user'", name: "zet") {
+#    defaultBranchRef {
+#      target {
+#        ... on Commit {
+#          history(first:5) {
+#            edges {
+#              node {
+#                repository {
+#                  name
+#              }
+#                treeUrl
+#                message
+#                committedDate
+#              }
+#            }
+#          }
+#        }
+#      }
+#    }
+#    refs(
+#      refPrefix: "refs/tags/",
+#      last: 5,
+#      orderBy: {field: TAG_COMMIT_DATE, direction: DESC}
+#    ) {
+#      edges {
+#        node {
+#          name
+#        }
+#      }
+#    }
+#  }
+#}'
+#}
