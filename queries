@@ -14,18 +14,17 @@ _printQueryUser() {
 _printQueryReposAll() {
   ## query to get 5 last updated repos
   ## use this to list "currently working on"
+  #repositories(first: 7, orderBy: {field: PUSHED_AT, direction: DESC}, affiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER], isFork: false) {
   echo 'query {
   user(login: "'$user'") {
-  repositories(first: 7, orderBy: {field: PUSHED_AT, direction: DESC}, affiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER], isFork: false) {
+  repositories(first: 7, orderBy: {field: PUSHED_AT, direction: DESC}, affiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]) {
       edges {
         node {
+          nameWithOwner
           name
           description
           pushedAt
           url
-          owner {
-            login
-          }
           }
         }
       }
@@ -35,18 +34,17 @@ _printQueryReposAll() {
 _printQueryReposOwn() {
   ## query to get 5 last updated repos
   ## use this to list "my projects"
+  # repositories(first: 7, orderBy: {field: PUSHED_AT, direction: DESC}, affiliations: [OWNER], isFork: false) {
   echo 'query {
   user(login: "'$user'") {
-  repositories(first: 7, orderBy: {field: PUSHED_AT, direction: DESC}, affiliations: [OWNER], isFork: false) {
+  repositories(first: 7, orderBy: {field: PUSHED_AT, direction: DESC}, affiliations: [OWNER]) {
       edges {
         node {
+          nameWithOwner
           name
           description
           pushedAt
           url
-          owner {
-            login
-          }
           }
         }
       }
@@ -75,6 +73,7 @@ _printQueryPullRequests() {
           url
           mergedAt
           repository {
+          nameWithOwner
             name
             url
             owner {
@@ -92,7 +91,7 @@ _printQueryZet() {
   #might have different names for their zet repo
   echo 'query {
   repository(owner: "'$user'", name: "zet") {
-    name
+    nameWithOwner
     refs(
       refPrefix: "refs/tags/",
       last: 5,
@@ -121,7 +120,7 @@ _printQueryForks() {
     repositories(first: 5, isFork: true, orderBy: {field: CREATED_AT, direction: DESC}) {
       edges {
         node {
-          name
+          nameWithOwner
           createdAt
           url
           description
