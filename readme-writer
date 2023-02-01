@@ -71,7 +71,7 @@ _checkHtmlComments() {
     wakatime) local -a lookupComments=("languages" "editors" "operating_systems" "projects" "timezone");;
     ## since graphql is used here, the keyword could be anything as queries are
     ## needed and filtering with jq works with more generic terms.
-    github) local -a lookupComments=( "zet" );;
+    github) local -a lookupComments=( "projectsOwn" "projectsAll" "projectsCount" "hire" "pullRequests" "zet" "forks") ;;
     #local -a lookupComments=("projectsOwn" "projectsAll" "projectsCount" "hire" "pullRequests" "zet" "forks" "stars" "gists" "followers" "sponsors" "languages" "productiveDay" "productiveTime");;
     #
     #
@@ -107,8 +107,11 @@ _queryGithubData() {
 }
 
 _fetchGithubData() {
-  ##TODO create a  loop to loop over all queries needed and fetch the
-  #different data.
+  ## loop over all queries needed and fetch the different data.
+  ## data that requires more intensive processing is coming from
+  ## individual _filterGithubXXX functions that fetch, filter and
+  ## proccess data on their own. They being called from within
+  ## _fetchGithubData and stored in Arrays.
   local -A fetchGithubData=()
   for githubComment in "${githubComments[@]}"; do
     case $githubComment in
@@ -127,47 +130,162 @@ _fetchGithubData() {
       productiveTime) fetchGithubData+=( ["$githubComment"]="$(_queryGithubData _printQueryProductivity)" );;
     esac
   done
-  #echo "${fetchGithubData[languages]}"
+
   _filterGithubData
 }
 _filterGithubData() {
-  local -A filterGithubName
-  local -A filterGithubTimestamp
-  local -A filterGithubDescription
-  local -A filterGithubTitle
-  local -A filterGithubCompany
-  local -A filterGithubPercentage
-  local -A filterGithubStart; local -A filterGithubMiddle;
+  local -A filterGithubStart; local -A filterGithubMiddle
   local -A filterGithubEnd
-  local owner
-  local urlTitle
-  local urlName
-  local isoSec
-  local -a productivityDaytime
-  local -a productivityDay
-  local -a topLanguages
+  local -A iMax
+
+  ## loop to set iMax:
+  for githubComment in "${githubComments[@]}"; do
+    case "$githubComment" in
+      projectsOwn|projectsAll) iMax[$githubComment]=7;;
+      projectsCount) iMax[$githubComment]=2;;
+      hire) iMax[$githubComment]=1;;
+      pullRequests|zet|forks) iMax[$githubComment]=5;;
+
+    esac
+  done
+  ## outer comment loop:
+  for githubComment in "${githubComments[@]}"; do
+######################### temp integrate later #########################
+    ##FIXME this is temporarily until i get to languages then remove this
+    case "$githubComment" in
+      languages) local -i x=1; local -i y=2; local -i z=3
+        local -i iMax=${topLanguages[0]};;
+    esac
+    ## temporarily break loop to avoid errors
+    ## until I have added all keywords to the case this is needed to
+    #avoid error
+    #local -i iMax=0
+    #[[ $githubComment == languages ]] && iMax=${topLanguages[0]}
+######################### temp integrate later #########################
+    ## inner index loop 1 for keywords that can be easily processed
+    echo "$githubComment iMax: ${iMax[$githubComment]}"
+    for ((i = 0; i < ${iMax[$githubComment]}; i++)); do
+      case $githubComment in
+        projectsOwn|projectsAll)
+          filter=(".data.user.repositories.edges[$i]" ".node")
+          repoName="$(jq -r "${filter[0]} | ${filter[1]}.name" <<< ${fetchGithubData[$githubComment]})"
+          ## break inner loop if no data found. Because User does not
+          ## have sufficient repos
+          [[ $repoName == null ]] && break
+          ## skip github profile and zet repo
+          [[ "$repoName" == "$user" || "$repoName" == zet ]] && continue
+          nameWithOwner="$(jq -r "${filter[0]} | ${filter[1]}.nameWithOwner" <<< ${fetchGithubData[$githubComment]})"
+          urlRepo="$(jq -r "${filter[0]} | ${filter[1]}.url" <<< "${fetchGithubData["$githubComment"]}")"
+          description="$(jq -r "${filter[0]} | ${filter[1]}.description" <<< ${fetchGithubData[$githubComment]})"
+          datestamp="$(_createGithubTimeAgo "$(jq -r "${filter[0]} | ${filter[1]}.pushedAt" <<< ${fetchGithubData[$githubComment]})")"
+          filter0="* [$nameWithOwner]($urlRepo)"
+          filter1="- $description"
+          filter2="($datestamp)";;
+        projectsCount) filter=(".data.user.publicRepositories.totalCount" ".data.user.privateRepositories.totalCount")
+          repoCount="$(jq -r "${filter[$i]}" <<< ${fetchGithubData[$githubComment]})"
+          ## skip inner loop if no data found
+          [[ $repoCount == null ]] && continue
+          filter0="* 💾"
+          filter1="$repoCount"
+          ## filter2 first element is public second is Private
+          if [[ "$i" == 0 ]]; then
+            [[ "$filter1" == 1 ]] && filter2="Public Repository"               \
+              || filter2="Public Repositories"
+          else
+            [[ "$filter1" == 1 ]] && filter2="Private Repository"              \
+              || filter2="Private Repositories"
+          fi;;
+        hire) filter1=""; filter2=""
+          hireable="$(jq -r .data.viewer.isHireable <<< $userData)"
+          [[ "$hireable" == true ]] && filter0="> 💼 Open for hire now"       \
+            || filter0="> 🚫 Not available for hire" ;;
+        pullRequests) filter=(".data.search.edges[$i]" ".node")
+          nameWithOwner="$(jq -r "${filter[0]} | ${filter[1]}.repository.nameWithOwner" <<< ${fetchGithubData[$githubComment]})"
+          ## break inner loop if no data found
+          [[ $nameWithOwner == null ]] && break
+          urlRepo="$(jq -r "${filter[0]} | ${filter[1]}.repository.url" <<< ${fetchGithubData[$githubComment]})"
+          urlRequest="$(jq -r "${filter[0]} | ${filter[1]}.url" <<< ${fetchGithubData[$githubComment]})"
+          titleRequest="$(jq -r "${filter[0]} | ${filter[1]}.title" <<< ${fetchGithubData[$githubComment]})"
+          datestamp="$(_createGithubTimeAgo "$(jq -r "${filter[0]} | ${filter[1]}.mergedAt" <<< ${fetchGithubData[$githubComment]})")"
+          filter0="* [$titleRequest]($urlRequest)"
+          filter1="on ["$nameWithOwner"]($urlRepo)"
+          filter2="($datestamp)";;
+        zet) filter=(".data.repository.refs.edges[$i]" ".node.target" ".node.name" )
+          [[ $i == 0 ]] && nameWithOwner="$(jq -r ".data.repository.nameWithOwner" <<< ${fetchGithubData[$githubComment]})"
+          ## break inner loop if no data found
+          [[ $nameWithOwner == null ]] && break
+          urlCommit="$(jq -r "${filter[0]} | ${filter[1]}.treeUrl" <<< ${fetchGithubData[$githubComment]})"
+          isoSec="$(jq -r "${filter[0]} | ${filter[2]}" <<< ${fetchGithubData[$githubComment]})"
+          commitMsg="$(jq -r "${filter[0]} | ${filter[1]}.message" <<< ${fetchGithubData[$githubComment]})"
+          datestamp="$(_createGithubTimeAgo "$(jq -r "${filter[0]} | ${filter[1]}.committedDate" <<< ${fetchGithubData[$githubComment]})")"
+          filter0="* [$nameWithOwner]($urlCommit/$isoSec)"
+          filter1="- $commitMsg"
+          filter2="($datestamp)";;
+        forks) filter=(".data.user.repositories.edges[$i]" ".node")
+          urlRepo="$(jq -r "${filter[0]} | ${filter[1]}.url" <<< ${fetchGithubData[$githubComment]})"
+          ## break inner loop if no data found
+          [[ "$urlRepo" == null ]] && break
+          nameWithOwner="$(jq -r "${filter[0]} | ${filter[1]}.nameWithOwner" <<< ${fetchGithubData[$githubComment]})"
+          description="$(jq -r "${filter[0]} | ${filter[1]}.description" <<< ${fetchGithubData[$githubComment]})"
+          datestamp="$(_createGithubTimeAgo "$(jq -r "${filter[0]} | ${filter[1]}.createdAt" <<< ${fetchGithubData[$githubComment]})")"
+          filter0="* [$nameWithOwner]($urlRepo)"
+          filter1="- $description"
+          filter2="($datestamp)"
+          ;;
+          #echo "0: $filter0 1: $filter1 2: $filter2"
+      esac
+      ##DEBUG:
+      #echo "0: $filter0 1: $filter1 2: $filter2"
+
+      filterGithubStart+=( ["${githubComment}$i"]="$filter0" )
+      filterGithubMiddle+=( ["${githubComment}$i"]="$filter1" )
+      filterGithubEnd+=( ["${githubComment}$i"]="$filter2" )
+      ##SHIT TO WORK WITH:
+      #
+      
+          ## check if it actually finds data to assign to array, if not
+          ## skip to next element (technically a break would also work because items are listed in an order)
+#          [[ "${filterGithubDescription["${githubComment}$i"]}" == "null" ]] && continue
+
+
+#          markdownBlock+="* ${filterGithubName["${commentArg}$i"]} - ${filterGithubDescription["${commentArg}$i"]} (${filterGithubTimestamp["${commentArg}$i"]})\n"
+#          [[ $i == 4 ]] && break;;
+
+      ##DEBUG:
+      #echo "start: ${filterGithubStart[$githubComment$i]} middle: ${filterGithubMiddle[$githubComment$i]} end: ${filterGithubEnd[$githubComment$i]}"
+    done
+          
+    ## inner index loop 2 for keywords that require individual processing: own filter/fetch function
+    ## TEMPORARILY DISABLED
+    #for ((i = 0; i < $iMax; i++)); do
+    #  filterGithubStart+=( ["${githubComment}$i"]="${topLanguages[$x]}" )
+    #  filterGithubMiddle+=( ["${githubComment}$i"]="${topLanguages[$y]}" )
+    #  filterGithubEnd+=( ["${githubComment}$i"]="${topLanguages[$z]}" )
+    #  x+=3; y+=3; z+=3
+    #done
+  done
+  _writeGithubTemplate
+}
+_OLDfilterGithubData() {
+  local -A filterGithubName; local -A filterGithubTimestamp
+  local -A filterGithubDescription; local -A filterGithubTitle
+  local -A filterGithubCompany; local -A filterGithubPercentage
+  local -A filterGithubStart; local -A filterGithubMiddle
+  local -A filterGithubEnd
+  local owner; local urlTitle; local urlName; local isoSec
+  local -a productivityDaytime; local -a productivityDay
+  local -a topLanguages; local -a filter
+  ## fetch&filter directly from filter functions
+  topLanguages=( $(_filterGithubTopLanguages) )
   IFS=';' productivityDaytime=( $(_filterGithubProductiveTime) )
   IFS=';' productivityDay=( $(_filterGithubProductiveDay) )
-  #IFS=';' topLanguages=( $(_filterGithubTopLanguages) )
-  topLanguages=( $(_filterGithubTopLanguages) )
-  #IFS=';' _filterGithubTopLanguages
-  #echo "${topLanguages[@]}"
-  #echo "${topLanguages[0]}"
-  #echo "${topLanguages[1]}"
-  #_filterGithubProductiveTime
-  #_filterGithubProductiveDay
-  #echo "${productivityDaytime[@]}"
-  #echo "${productivityDaytime[0]}"
-  #echo "${productivityDaytime[1]}"
-  #echo "${productivityDaytime[2]}"
-  local -a filter
+
   for githubComment in "${githubComments[@]}"; do
     for ((i = 0; i < 7; i++)); do
       case "$githubComment" in
         projectsOwn|projectsAll) filter=(".data.user.repositories.edges[$i]" ".node")
           [[ "$(jq -r "${filter[0]} | ${filter[1]}.name" <<< "${fetchGithubData["$githubComment"]}")" == $user ]] && continue
           [[ "$(jq -r "${filter[0]} | ${filter[1]}.name" <<< "${fetchGithubData["$githubComment"]}")" == zet ]] && continue
-          #filter=(".data.search.edges[$i]" ".node")
           owner="$(jq -r "${filter[0]} | ${filter[1]}.owner.login" <<< "${fetchGithubData["$githubComment"]}")"
           urlName="$(jq -r "${filter[0]} | ${filter[1]}.url" <<< "${fetchGithubData["$githubComment"]}")"
           filterGithubName+=( ["${githubComment}$i"]="$(jq -r "${filter[0]} | ${filter[1]}.name" <<< "${fetchGithubData["$githubComment"]}")" )
@@ -179,6 +297,7 @@ _filterGithubData() {
           [[ $i == 2 ]] && break
           filterGithubStart+=( ["${githubComment}$i"]="$(jq -r "${filter[$i]}" <<< "${fetchGithubData["$githubComment"]}")" );;
           #echo "${filterGithubStart["${githubComment}$i"]}"
+        hire) filterGithubStart+=( ["${githubComment}$i"]="$(jq -r .data.viewer.isHireable <<< "$userData")" );;
         pullRequests) filter=(".data.search.edges[$i]" ".node")
           [[ $i == 5 ]] && break
           urlTitle="$(jq -r "${filter[0]} | ${filter[1]}.url" <<< "${fetchGithubData["$githubComment"]}")"
@@ -240,12 +359,6 @@ _filterGithubData() {
           filterGithubName["${githubComment}$i"]="[${filterGithubName["${githubComment}$i"]}]($urlName)"
           filterGithubTimestamp+=( ["${githubComment}$i"]="$(jq -r "${filter[0]} | ${filter[2]}" <<< "${fetchGithubData["$githubComment"]}")" )
           filterGithubTimestamp["${githubComment}$i"]="$(_createGithubTimeAgo ${filterGithubTimestamp["${githubComment}$i"]})";;
-          #echo "${filterGithubName["${githubComment}$i"]}"
-          #echo "${filterGithubDescription["${githubComment}$i"]}"
-          #echo "${filterGithubTimestamp["${githubComment}$i"]}"
-          #
-      
-
         productiveDay) 
           [[ $i == 0 ]] && local -i x=0 && local -i y=1 && local -i z=2
           filterGithubStart+=( ["${githubComment}$i"]="${productivityDay[$x]}" )
@@ -256,8 +369,6 @@ _filterGithubData() {
           filterGithubMiddle+=( ["${githubComment}$i"]="${productivityDay[$y]} commits" )
           filterGithubEnd+=( ["${githubComment}$i"]="${productivityDay[$z]}" )
           x+=3; y+=3; z+=3;;
-
-
         productiveTime) [[ $i == 4 ]] && break
           [[ $i == 0 ]] && local -i x=0 && local -i y=1 && local -i z=2
           filterGithubStart+=( ["${githubComment}$i"]="${productivityDaytime[$x]}" )
@@ -265,62 +376,67 @@ _filterGithubData() {
           filterGithubMiddle+=( ["${githubComment}$i"]="${productivityDaytime[$y]} commits" )
           filterGithubEnd+=( ["${githubComment}$i"]="${productivityDaytime[$z]}" )
           x+=3; y+=3; z+=3;;
-          #echo "x: $x y: $y z: $z"
-          #echo "${filterGithubName["${githubComment}$i"]}"
-          #echo "${filterGithubDescription["${githubComment}$i"]}"
-          #echo "${filterGithubPercentage["${githubComment}$i"]}"
-          #x=$((x+3)); y=$((y+3)); z=$((z+3));;
-        hire) filterGithubStart+=( ["${githubComment}$i"]="$(jq -r .data.viewer.isHireable <<< "$userData")" );;
-
-
-
-
-
-        #stats) ;;
       esac
     done
   done
-
-  #echo "${topLanguages[@]}"
-  #echo "${topLanguages[0]}"
-  #topLanguages=("4" Shell "6 repos" "54.55%" Javascript "3 repos" "20%")
-  
-
-
-  for githubComment in "${githubComments[@]}"; do
-    case "$githubComment" in
-      languages) local -i x=1; local -i y=2; local -i z=3
-        local -i iMax=${topLanguages[0]};;
-    esac
-    ## until I have added all keywords to the case this is needed to
-    #avoid error
-    local -i iMax=0
-    [[ $githubComment == languages ]] && iMax=${topLanguages[0]}
-
-    for ((i = 0; i < $iMax; i++)); do
-      filterGithubStart+=( ["${githubComment}$i"]="${topLanguages[$x]}" )
-      filterGithubMiddle+=( ["${githubComment}$i"]="${topLanguages[$y]}" )
-      filterGithubEnd+=( ["${githubComment}$i"]="${topLanguages[$z]}" )
-      x+=3; y+=3; z+=3
-    done
-  done
-
-
+########################### new filter system ##########################
 
   _writeGithubTemplate
-
-  ## Array keys:
-  # Name = Name of Repo
-  # Description = Desc. of Repo
-  # Timestamp = Time ago since updated
-  #
-  #Projects*: Name Description Timestamp
-  #Stars: Name Description Timestamp
-  #Sponsors: Name Timestamp
-  #PullReq: PullReqCommitMsg Name
-  #...
 }
 _createGithubMarkdownBlock() {
+
+  ##TODO make this into a case and have languagesCountTotal be a variable that changes
+  #the amount of loops needed. Remove the old case that creates
+  #markdownBLock as you can directly printf the variables without it.
+  #have the `printf "format" "variables"` The variables should remain the
+  #same only have 3 if they don't match semantically it's not too much of
+  #a deal but have the "format" stored in a variable as it changes from
+  #github comment to comment
+  #
+  local commentArg="$1"
+  ## It looks like the empty check is not needed with printf
+  #local -i empty=0
+  local space0=0; local space1=0; local space2=0
+  for ((i = 0; i < ${iMax[$commentArg]}; i++)); do
+    ## For the ones that need spaces:
+    #[[ $i == 0 ]] && { space0=xx; space1=xx; space2=xx; }
+    
+    ## don't 'break'! because zet needs to continue it just skips github
+    ## profile and zet repo. Also all other queries that do not find
+    ## sufficient data/results (usually 5) get skipped and won't be printed
+    ## as empty lines
+    [[ -n "${filterGithubStart["${commentArg}$i"]}" ]] || continue
+    case "$commentArg" in
+      projectsOwn|projectsAll) 
+        ## It looks like the empty check is not needed with printf
+        #[[ -n "${filterGithubStart["${commentArg}$i"]}" ]] || { empty+=1; continue; }
+        #[[ $i == 4 || $i == 5 ]] && [[ $empty == 2 ]] && break
+        ;;
+      #projectsCount) ;;
+    esac
+    ## generic print statement:
+    printf "%-*s %-*s %-*s\n" $space0 "${filterGithubStart["${commentArg}$i"]}" $space1 "${filterGithubMiddle["${commentArg}$i"]}" $space2 "${filterGithubEnd["${commentArg}$i"]}"
+  done
+}
+##INTEGRATE THIS:
+#  elif [[ "$commentArg" == projectsCount ]]; then
+#    for ((i = 0; i < 2; i++)); do
+#      if [[ $i -eq 0 ]]; then
+#        [[ "${filterGithubStart["${commentArg}$i"]}" -eq 1 ]]                 \
+#          && printf "* 💾 %s Public Repository\n" "${filterGithubStart["${commentArg}$i"]}" \
+#          || printf "* 💾 %s Public Repositories\n" "${filterGithubStart["${commentArg}$i"]}"
+#      else
+#        [[ "${filterGithubStart["${commentArg}$i"]}" -eq 1 ]]                 \
+#          && printf "* 💾 %s Private Repository\n" "${filterGithubStart["${commentArg}$i"]}" \
+#          || printf "* 💾 %s Private Repositories\n" "${filterGithubStart["${commentArg}$i"]}"
+#      fi
+#    done
+
+
+
+  
+################################## old #################################
+_OLDcreateGithubMarkdownBlock() {
   local commentArg="$1"
   local markdownBlock
   local -i empty=0
@@ -362,14 +478,6 @@ _createGithubMarkdownBlock() {
     esac
   done
 
-  ##TODO make this into a case and have languagesCountTotal be a variable that changes
-  #the amount of loops needed. Remove the old case that creates
-  #markdownBLock as you can directly printf the variables without it.
-  #have the `printf "format" "variables"` The variables should remain the
-  #same only have 3 if they don't match semantically it's not too much of
-  #a deal but have the "format" stored in a variable as it changes from
-  #github comment to comment
-
   if [[ "$commentArg" == productiveTime ]]; then
     space1=20; space2=20
     for ((i = 0; i < 4; i++)); do
@@ -390,6 +498,7 @@ _createGithubMarkdownBlock() {
       ## right aligned: 
       #printf "* %20s %*s %*s\n" "${filterGithubStart["${commentArg}$i"]}" $space1 "${filterGithubMiddle["${commentArg}$i"]}" $space2 "${filterGithubEnd["${commentArg}$i"]}"
     done
+
   elif [[ "$commentArg" == projectsCount ]]; then
     for ((i = 0; i < 2; i++)); do
       if [[ $i -eq 0 ]]; then
@@ -402,6 +511,7 @@ _createGithubMarkdownBlock() {
           || printf "* 💾 %s Private Repositories\n" "${filterGithubStart["${commentArg}$i"]}"
       fi
     done
+
   elif [[ "$commentArg" == productiveDay ]]; then
     space1=20; space2=20
     for ((i = 0; i < 7; i++)); do
@@ -418,6 +528,7 @@ _createGithubMarkdownBlock() {
     printf "%s" "$markdownBlock"
   fi
 }
+
 _writeGithubTemplate() {
   ## Currently there are no plans of adding _createGithubHtmlBlock(),
   ## because in my current README.md markdown works already.
