@@ -8,6 +8,7 @@ _printQueryUser() {
     login
     id
     isHireable
+    createdAt
     }
   }'
 }
@@ -137,12 +138,9 @@ _printQueryStars() {
       edges {
         starredAt
         node {
-          name
+          nameWithOwner
           description
           url
-          owner {
-            login
-          }
         }
       }
     }
@@ -158,6 +156,9 @@ _printQueryGists() {
           createdAt
           description
           url
+          owner {
+            login
+          }
           files(limit: 1) {
             name
           }
@@ -234,7 +235,7 @@ _printQueryProductivity() {
           defaultBranchRef {
             target {
               ... on Commit {
-                history(first: 100, author: { id: "'$id'" }, since: "'$yearMonth'-01T00:00:00Z") {
+                history(first: 100, author: { id: "'$id'" }, since: "'$timeAgoTimestamp'") {
                   totalCount
                   edges {
                     node {
