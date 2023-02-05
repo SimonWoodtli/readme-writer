@@ -146,7 +146,7 @@ _fetchGithubData() {
       productiveTime) fetchGithubData+=( ["$githubComment"]="$(_fetchGithubProductiveRepoPages)" );;
     esac
   done
-  #echo "${fetchGithubData[productiveDay]}"
+  #echo "${fetchGithubData[productiveDay]}" | grep committedDate | wc -l #c
 
   _filterGithubData
 }
@@ -238,9 +238,9 @@ _filterGithubData() {
   local -A filterGithubEnd; local -A iMax
   local -a productivityDaytime; local -a productivityDay
   local -a topLanguages; local -a filter
+
   #_filterGithubProductiveDay
   #_filterGithubProductiveTime
-  #exit
 
   ## loop to set iMax:
   for githubComment in "${githubComments[@]}"; do
@@ -258,6 +258,10 @@ _filterGithubData() {
         iMax[$githubComment]=4; local -i iTime=0;;
     esac
   done
+
+  #for e in ${productivityDay[@]}; do
+  #  echo $e
+  #done
 
 
   ## outer comment loop:
@@ -384,22 +388,19 @@ _filterGithubData() {
           #filter0="${productivityDay[1]}"
           #filter0="${productivityDay[2]}"
           filter0="* ${productivityDay[$iDay]}"
-          filter1="${productivityDay[$((iDay+1))]}"
+          filter1="${productivityDay[$((iDay+7))]}"
           ## add commit or commits according to counted num
           [[ "$filter1" == 1 ]] && filter1="$filter1 commit"                  \
             || filter1="$filter1 commits"
-          filter2="${productivityDay[$((iDay+2))]}"
-          iDay+=3;;
+          filter2="${productivityDay[$((iDay+14))]}"
+          iDay+=1;;
         productiveTime)
           filter0="* ${productivityDaytime[$iTime]}"
-          filter1="${productivityDaytime[$((iTime+1))]}"
+          filter1="${productivityDaytime[$((iTime+4))]}"
           [[ "$filter1" == 1 ]] && filter1="$filter1 commit"                  \
             || filter1="$filter1 commits"
-          filter2="${productivityDaytime[$((iTime+2))]}"
-          iTime+=3;;
-
-
-
+          filter2="${productivityDaytime[$((iTime+8))]}"
+          iTime+=1;;
       esac
       ##DEBUG:
       #echo "0: $filter0 1: $filter1 2: $filter2"
@@ -773,10 +774,10 @@ _filterGithubTopLanguages() {
   echo "${languagesArray[*]}"
 }
 _filterGithubProductiveDay() {
-  local -A commitCount
-  local -A percentage
+  local -A commitCount; local -A percentage
   local -a weekdays=( "Monday" "Tuesday" "Wednesday" "Thursday" "Friday" "Saturday" "Sunday" )
-
+  local -i totalCommitCount=$(grep "committedDate" <<< "${fetchGithubData[productiveDay]}" | wc -l)
+  local datestamp; local weekday
   ## count commits per weekday
   while read line; do
     if [[ $line =~ committedDate.* ]]; then
@@ -785,27 +786,65 @@ _filterGithubProductiveDay() {
       commitCount[$weekday]=$((commitCount[$weekday]+1))
     fi
   done < <(echo "${fetchGithubData[productiveDay]}")
-
-  for weekday in "${!commitCount[@]}"; do
-    echo "Commits on $weekday: ${commitCount[$weekday]}"
-  done
-
-  ## TODO: get total commit count
-  totalCommitCount=""
-
+  #for weekday in "${!commitCount[@]}"; do
+  #  echo "Commits on $weekday: ${commitCount[$weekday]}"
+  #done
   ## calculate percentage of counted weekdays
   for weekday in "${weekdays[@]}"; do
     if [[ -z ${commitCount[$weekday]} ]]; then
-      ${commitCount[$weekday]}=0
-      ${percentage[$weekday]}=0.00%
+      commitCount[$weekday]="0"
+      percentage[$weekday]="0.00%"
     else
-      ${percentage[$weekday]}="$(printf "%.2f\n" $(bc -l <<< "(${commitCount[$weekday]} / $totalCommitCount) * 100"))%"
+      percentage[$weekday]="$(printf "%.2f\n" $(bc -l <<< "(${commitCount[$weekday]} / $totalCommitCount) * 100"))%"
     fi
   done
 
-  echo "${weekdays[*]} ${commitCount[*]} ${percentage[*]}"
+  echo "${weekdays[*]};${commitCount[*]};${percentage[*]}"
 }
-## TODO create  new _filterGithubProductiveTime() function
+_filterGithubProductiveTime() {
+  local -A commitCount; local -A percentage
+  local -i totalCommitCount=$(grep "committedDate" <<< "${fetchGithubData[productiveDay]}" | wc -l)
+  local datestamp; local timestamp; local -i hours; local -i minutes
+  local -a daytimes=( "Morning" "Daytime" "Evening" "Night" )
+  ## count commits per daytime
+  while read line; do
+    if [[ $line =~ committedDate.* ]]; then
+      datestamp="$(echo "$line" | grep -o ':.*Z' | sed 's|^...||')"
+      ## truncate date from datestamp, only time needed
+      timestamp="${datestamp##*T}"
+      ## get hours
+      hours="$(cut -d: -f1 <<< $timestamp)"
+      ## get minutes, sed needed to rm first 0 for minutes 01-09 otherwise remainder errors, minute 00 is fine just one 0 gets removed
+      minutes="$(cut -d: -f2 <<< $timestamp | sed 's|^0||')"
+      #echo $timestamp
+      #echo $hours-$minutes
+      if [[ "$minutes%60" -ge 30 ]]; then
+        hours+=1
+        [[ $hours -eq 24 ]] && hours=0
+      fi
+      #echo $hours-$minutes
+      case $hours in
+        [0-5]) commitCount[Night]=$((commitCount[Night]+1));;
+        [6-9]|1[0-1]) commitCount[Morning]=$((commitCount[Morning]+1));;
+        1[2-7]) commitCount[Daytime]=$((commitCount[Daytime]+1));;
+        1[8-9]|2[0-3]) commitCount[Evening]=$((commitCount[Evening]+1));;
+      esac
+    fi
+  done < <(echo "${fetchGithubData[productiveTime]}")
+  ## calculate percentage of counted daytimes
+  for daytime in "${daytimes[@]}"; do
+    if [[ -z ${commitCount[$daytime]} ]]; then
+      commitCount[$daytime]="0"
+      percentage[$daytime]="0.00%"
+    else
+      percentage[$daytime]="$(printf "%.2f\n" $(bc -l <<< "(${commitCount[$daytime]} / $totalCommitCount) * 100"))%"
+    fi
+  done
+  ## add emojis to daytimes
+  daytimes=( "🌅 Morning" "🌞 Daytime" "🌇 Evening" "🌃 Night" )
+
+  echo "${daytimes[*]};${commitCount[*]};${percentage[*]}"
+}
 
 _OLDfilterGithubProductiveDay() {
   local -i xRepoMax="$(jq -r ".data.user.repositories.totalCount" <<< "${fetchGithubData[productiveDay]}")"
@@ -891,7 +930,7 @@ _OLDfilterGithubProductiveDay() {
   echo "Monday;$mondayCommitCount;$mondayPercentage;Tuesday;$tuesdayCommitCount;$tuesdayPercentage;Wednesday;$wednesdayCommitCount;$wednesdayPercentage;Thursday;$thursdayCommitCount;$thursdayPercentage;Friday;$fridayCommitCount;$fridayPercentage;Saturday;$saturdayCommitCount;$saturdayPercentage;Sunday;$sundayCommitCount;$sundayPercentage"
 }
 #_filterGithubProductiveDaytime() {
-_filterGithubProductiveTime() {
+_OLDfilterGithubProductiveTime() {
   ## calculate most productive daytime of current month measured by
   ## amount of commits
   local -i xRepoMax="$(jq -r ".data.user.repositories.totalCount" <<< "${fetchGithubData[productiveTime]}")"
