@@ -224,19 +224,143 @@ _printQueryLanguages() {
   }
 }'
 }
-_printQueryProductivity() {
-  echo 'query {
+_printQueryProductivityFirstRepoPage() {
+  ## first main query on first repos
+  echo '
+query fetchAllData {
   user(login: "'$user'") {
-    repositories(first: 100, affiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]) {
+    repositories(first: 2, affiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]) {
       totalCount
+      pageInfo {
+        endCursor
+        hasNextPage
+      }
       edges {
         node {
           nameWithOwner
           defaultBranchRef {
             target {
               ... on Commit {
-                history(first: 100, author: { id: "'$id'" }, since: "'$timeAgoTimestamp'") {
+                history(first: 100, author: { id: "'$id'" }, since: "'$since'") {
                   totalCount
+                  pageInfo {
+                    endCursor
+                    hasNextPage
+                  }
+                  edges {
+                    node {
+                      committedDate
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}'
+}
+_printQueryProductivityFirstRepoPageCommitPage() {
+  ## first main queries on first repos additional commmits
+  echo '
+query nextPage {
+  user(login: "'$user'") {
+    repositories(first: 2, affiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]) {
+      totalCount
+      pageInfo {
+        endCursor
+        hasNextPage
+      }
+      edges {
+        node {
+          nameWithOwner
+          defaultBranchRef {
+            target {
+              ... on Commit {
+                history(first: 100, author: { id: "'$id'" }, since: "'$since'", after: "'$cursor'") {
+                  totalCount
+                  pageInfo {
+                    endCursor
+                    hasNextPage
+                  }
+                  edges {
+                    node {
+                      committedDate
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}'
+}
+_printQueryProductivityNextRepoPage() {
+  ## additional repos queries with first 100 commits per repo
+  echo '
+query fetchAllData {
+  user(login: "'$user'") {
+    repositories(first: 2, affiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER], after: "'$repoCursor'") {
+      totalCount
+      pageInfo {
+        endCursor
+        hasNextPage
+      }
+      edges {
+        node {
+          nameWithOwner
+          defaultBranchRef {
+            target {
+              ... on Commit {
+                history(first: 100, author: { id: "'$id'" }, since: "'$since'") {
+                  totalCount
+                  pageInfo {
+                    endCursor
+                    hasNextPage
+                  }
+                  edges {
+                    node {
+                      committedDate
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}'
+}
+_printQueryProductivityNextRepoPageNextCommitPage() {
+  ## additional repos queries with more than 100 commits per repo
+  echo '
+query nextPage {
+  user(login: "'$user'") {
+    repositories(first: 2, affiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER], after: "'$repoCursor'") {
+      totalCount
+      pageInfo {
+        endCursor
+        hasNextPage
+      }
+      edges {
+        node {
+          nameWithOwner
+          defaultBranchRef {
+            target {
+              ... on Commit {
+                history(first: 100, author: { id: "'$id'" }, since: "'$since'", after: "'$cursor'") {
+                  totalCount
+                  pageInfo {
+                    endCursor
+                    hasNextPage
+                  }
                   edges {
                     node {
                       committedDate
@@ -253,7 +377,36 @@ _printQueryProductivity() {
 }'
 }
 
+
 ################################# stuff ################################
+#_printQueryProductivity() {
+#  echo 'query {
+#  user(login: "'$user'") {
+#    repositories(first: 100, affiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]) {
+#      totalCount
+#      edges {
+#        node {
+#          nameWithOwner
+#          defaultBranchRef {
+#            target {
+#              ... on Commit {
+#                history(first: 100, author: { id: "'$id'" }, since: "'$since'") {
+#                  totalCount
+#                  edges {
+#                    node {
+#                      committedDate
+#                    }
+#                  }
+#                }
+#              }
+#            }
+#          }
+#        }
+#      }
+##    }
+#  }
+#}'
+#}
 #
 #_printQueryLanguages() {
 #  echo 'query {
