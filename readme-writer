@@ -47,18 +47,18 @@ _main() {
   #[[ -z "${wakaComments[@]}" ]] || { service="wakatime"; _fetchWakaData; }
   echo "start github"
   local -a githubComments=($(_checkHtmlComments github))
-  if [[ -n "${githubComments[@]}" ]]; then 
+  if [[ -n "${githubComments[@]}" ]]; then
     source queries
-    declare service="github" 
+    declare service="github"
     ## Get username and id
     declare userData="$(_queryGithubData _printQueryUser)"
     declare user="$(jq -r .data.viewer.login <<< "$userData")"
     declare id="$(jq -r .data.viewer.id <<< "$userData")"
-    timeAgoTimestamp="$(date -u -d "$date -1 year" +"%FT%TZ")"
-    [[ $flag == "-m" ]] && timeAgoTimestamp="$(date -u -d "$date -1 month" +"%FT%TZ")"
-    [[ $flag == "-c" ]] && timeAgoTimestamp="$(jq -r .data.viewer.createdAt <<< "$userData")"
+    declare since="$(date -u -d "$date -1 year" +"%FT%TZ")"
+    [[ $flag == "-m" ]] && since="$(date -u -d "$date -1 month" +"%FT%TZ")"
+    [[ $flag == "-c" ]] && since="$(jq -r .data.viewer.createdAt <<< "$userData")"
 
-    
+
     #declare dateOneMonthAgo="$(date -u -d "$date -30 days" +"%FT%TZ")"
     #declare dateUserCreated="$(jq -r .data.viewer.createdAt <<< "$userData")"
     #dateUserCreated="${dateUserCreated%T*}"
@@ -68,7 +68,7 @@ _main() {
 
     #yearMonthDay
 
-    ## difference between waka REST and github graphql, github 
+    ## difference between waka REST and github graphql, github
     #requires already a looping over comments, because multiple queries
     #are needed
     _fetchGithubData
@@ -84,7 +84,7 @@ _checkHtmlComments() {
     wakatime) local -a lookupComments=("languages" "editors" "operating_systems" "projects" "timezone");;
     ## since graphql is used here, the keyword could be anything as queries are
     ## needed and filtering with jq works with more generic terms.
-    github) local -a lookupComments=("productiveDay") ;;
+    github) local -a lookupComments=("productiveTime" "productiveDay") ;;
     #local -a lookupComments=("projectsOwn" "projectsAll" "projectsCount" "hire" "pullRequests" "zet" "forks" "stars" "gists" "followers" "sponsors" "languages" "productiveDay" "productiveTime");;
     #
     #
@@ -139,19 +139,107 @@ _fetchGithubData() {
       followers) fetchGithubData+=( ["$githubComment"]="$(_queryGithubData _printQueryFollowers)" );;
       sponsors) fetchGithubData+=( ["$githubComment"]="$(_queryGithubData _printQuerySponsors)" );;
       languages) fetchGithubData+=( ["$githubComment"]="$(_queryGithubData _printQueryLanguages)" );;
-      productiveDay) fetchGithubData+=( ["$githubComment"]="$(_queryGithubData _printQueryProductivity)" );;
-      productiveTime) fetchGithubData+=( ["$githubComment"]="$(_queryGithubData _printQueryProductivity)" );;
+      #productiveDay) fetchGithubData+=( ["$githubComment"]="$(_queryGithubData _printQueryProductivity)" );;
+      #productiveTime) fetchGithubData+=( ["$githubComment"]="$(_queryGithubData _printQueryProductivity)" );;
+
+      productiveDay) fetchGithubData+=( ["$githubComment"]="$(_fetchGithubProductiveRepoPages)" );;
+      productiveTime) fetchGithubData+=( ["$githubComment"]="$(_fetchGithubProductiveRepoPages)" );;
     esac
   done
+  #echo "${fetchGithubData[productiveDay]}"
 
   _filterGithubData
 }
+
+_fetchGithubProductiveRepoPages() {
+  # Call the first query
+  responseMain="$(_queryGithubData _printQueryProductivityFirstRepoPage)"
+  ## add first repo page with first 100 commits per repo to data
+  data="$responseMain"
+  repoHasNextPage=$(echo $responseMain | jq '.data.user.repositories.pageInfo.hasNextPage' )
+  local -i iMax
+  local -i x=0
+  ## set iMax according to whether or not more repo pages available
+  [[ $repoHasNextPage = true ]] && iMax=2 ||
+    iMax=$(echo $responseMain | jq '.data.user.repositories.totalCount' )
+  ## check first repo page, if repos have more than 100 commmits add to data
+  data+="$(_fetchGithubProductiveCommitPages)"
+
+  ## loop over all repo pages and add keep adding commits
+  while [[ $repoHasNextPage == "true" ]]; do
+    #echo index repo x: $x
+    repoCursor=$(echo $responseMain | jq '.data.user.repositories.pageInfo.endCursor' | tr -d '"')
+    #echo repoCursor: $repoCursor
+    ## get new repo page
+    responseMain="$(_queryGithubData _printQueryProductivityNextRepoPage)"
+    ## add first 100 commits from new repo page to data
+    data+="$responseMain"
+    ## check if new repo page has more than 100 commits and add to data
+    ##FIXME the last repo page has not iMax=100 but would need the
+    #remaining repos set as iMax
+    data+="$(_fetchGithubProductiveCommitPages)"
+    #_filterGithubProductiveDay && [[ $x == 3 ]] && exit
+    ## check if more repo pages available
+    repoHasNextPage=$(echo $responseMain | jq '.data.user.repositories.pageInfo.hasNextPage' | tr -d '"')
+    #echo repoNextpage inside: $repoHasNextPage
+    x+=1
+  done
+  echo "$data"
+}
+_fetchGithubProductiveCommitPages() {
+  ## inner commit loop over total counted repos
+  #hasNextPage=true
+  for ((i = 0; i < $iMax; i++)); do
+    hasNextPage="$(echo $responseMain | jq ".data.user.repositories.edges[$i].node.defaultBranchRef.target.history.pageInfo.hasNextPage")"
+    ## check if another page can is available if so second query is needed
+    if [[ $hasNextPage == "true" ]]; then
+      #echo index commmits: $i
+      cursor="$(echo $responseMain | jq ".data.user.repositories.edges[$i].node.defaultBranchRef.target.history.pageInfo.endCursor" | tr -d '"')"
+      #echo cursor commit: $cursor
+      ## check if _fetchGithubProductiveCommitPages is called first time
+      if [[ -z $repoCursor ]]; then
+        ## Call the next commit page query, without repoCursor set
+        response="$(_queryGithubData _printQueryProductivityFirstRepoPageCommitPage)"
+      else
+        ## Call the next commit page query, with repoCursor set
+        response="$(_queryGithubData _printQueryProductivityNextRepoPageNextCommitPage)"
+      fi
+      ## add second 100 commits to data
+      dataCommits+="$response"
+      hasNextPageInside="$(echo $response | jq ".data.user.repositories.edges[$i].node.defaultBranchRef.target.history.pageInfo.hasNextPage")"
+      #echo nextpage inside commit: $hasNextPageInside
+    fi
+    ## second inner commit loop: check if after the second query there is even more data, if so keep
+    ## requesting data until end
+    while [ "$hasNextPageInside" == "true" ]; do
+      #echo index commits i: $i
+      # Parse the end cursor and has next page values from the response
+      cursor="$(echo $response | jq ".data.user.repositories.edges[$i].node.defaultBranchRef.target.history.pageInfo.endCursor" | tr -d '"')"
+      #echo cursor commit: $cursor
+      ## check if _fetchGithubProductiveCommitPages is called first time
+      if [[ -z $repoCursor ]]; then
+        ## Call the next commit page query, without repoCursor set
+        response="$(_queryGithubData _printQueryProductivityFirstRepoPageCommitPage)"
+      else
+        ## Call the next commit page query, with repoCursor set
+        response="$(_queryGithubData _printQueryProductivityNextRepoPageNextCommitPage)"
+      fi
+      ## add third-end batch of 100 commits to data
+      dataCommits+="$response"
+      hasNextPageInside="$(echo $response | jq ".data.user.repositories.edges[$i].node.defaultBranchRef.target.history.pageInfo.hasNextPage")"
+      #echo nextpage inside again commit: $hasNextPageInside
+    done
+  done
+  echo "$dataCommits"
+}
+
 _filterGithubData() {
   local -A filterGithubStart; local -A filterGithubMiddle
   local -A filterGithubEnd; local -A iMax
   local -a productivityDaytime; local -a productivityDay
   local -a topLanguages; local -a filter
   #_filterGithubProductiveDay
+  #_filterGithubProductiveTime
   #exit
 
   ## loop to set iMax:
@@ -325,7 +413,7 @@ _filterGithubData() {
 
 
     done
-          
+
     ## inner index loop 2 for keywords that require individual processing: own filter/fetch function
     ## TEMPORARILY DISABLED
 #    for ((i = 0; i < $iMax; i++)); do
@@ -430,7 +518,7 @@ _OLDfilterGithubData() {
           filterGithubName["${githubComment}$i"]="[${filterGithubName["${githubComment}$i"]}]($urlName)"
           filterGithubTimestamp+=( ["${githubComment}$i"]="$(jq -r "${filter[0]} | ${filter[2]}" <<< "${fetchGithubData["$githubComment"]}")" )
           filterGithubTimestamp["${githubComment}$i"]="$(_createGithubTimeAgo ${filterGithubTimestamp["${githubComment}$i"]})";;
-        productiveDay) 
+        productiveDay)
           [[ $i == 0 ]] && local -i x=0 && local -i y=1 && local -i z=2
           filterGithubStart+=( ["${githubComment}$i"]="${productivityDay[$x]}" )
           ##FIXME commits writing it here would mean if a day like Monday
@@ -471,14 +559,14 @@ _createGithubMarkdownBlock() {
   for ((i = 0; i < ${iMax[$commentArg]}; i++)); do
     ## For the ones that need spaces:
     #[[ $i == 0 ]] && { space0=xx; space1=xx; space2=xx; }
-    
+
     ## don't 'break'! because zet needs to continue it just skips github
     ## profile and zet repo. Also all other queries that do not find
     ## sufficient data/results (usually 5) get skipped and won't be printed
     ## as empty lines
     [[ -n "${filterGithubStart["${commentArg}$i"]}" ]] || continue
     case "$commentArg" in
-      projectsOwn|projectsAll) 
+      projectsOwn|projectsAll)
         ## It looks like the empty check is not needed with printf
         #[[ -n "${filterGithubStart["${commentArg}$i"]}" ]] || { empty+=1; continue; }
         #[[ $i == 4 || $i == 5 ]] && [[ $empty == 2 ]] && break
@@ -508,7 +596,7 @@ _createGithubMarkdownBlock() {
 
 
 
-  
+
 ################################## old #################################
 _OLDcreateGithubMarkdownBlock() {
   local commentArg="$1"
@@ -569,7 +657,7 @@ _OLDcreateGithubMarkdownBlock() {
       #printf "* %s %${space1}s %${space2}s\n" "${filterGithubStart["${commentArg}$i"]}" "${filterGithubMiddle["${commentArg}$i"]}" "${filterGithubEnd["${commentArg}$i"]}"
       ## left aligned
       printf "* %-20s %-*s %-*s\n" "${filterGithubStart["${commentArg}$i"]}" $space1 "${filterGithubMiddle["${commentArg}$i"]}" $space2 "${filterGithubEnd["${commentArg}$i"]}"
-      ## right aligned: 
+      ## right aligned:
       #printf "* %20s %*s %*s\n" "${filterGithubStart["${commentArg}$i"]}" $space1 "${filterGithubMiddle["${commentArg}$i"]}" $space2 "${filterGithubEnd["${commentArg}$i"]}"
     done
 
@@ -614,7 +702,7 @@ _writeGithubTemplate() {
   #  callFunction="_createGithubMarkdownBlock"
   #fi
   #
-  #_createGithubMarkdownBlock productiveTime 
+  #_createGithubMarkdownBlock productiveTime
   for githubComment in "${githubComments[@]}"; do
     #content="$($callFunction $githubComment)"
     #_createGithubMarkdownBlock $githubComment
@@ -673,9 +761,9 @@ _filterGithubTopLanguages() {
 
   ##loop over keys:  keys = languageNames, values = counted number of language
   #echo "$languagesCountTotal"
-  
+
   languagesArray+=( "${languagesCountTotal}" )
-  for languageName in "${!languagesNameCount[@]}"; do 
+  for languageName in "${!languagesNameCount[@]}"; do
     ## skip loop if null
     [[ $languageName == null ]] && continue
     percentageName="$(awk '{print sprintf("%.2f", $1/$2*100)}' <<< "${languagesNameCount[$languageName]} $reposCountTotal")%"
@@ -685,8 +773,43 @@ _filterGithubTopLanguages() {
   echo "${languagesArray[*]}"
 }
 _filterGithubProductiveDay() {
+  local -A commitCount
+  local -A percentage
+  local -a weekdays=( "Monday" "Tuesday" "Wednesday" "Thursday" "Friday" "Saturday" "Sunday" )
+
+  ## count commits per weekday
+  while read line; do
+    if [[ $line =~ committedDate.* ]]; then
+      datestamp="$(echo "$line" | grep -o ':.*Z' | sed 's|^...||')"
+      weekday="$(date -d "$datestamp" +%A)"
+      commitCount[$weekday]=$((commitCount[$weekday]+1))
+    fi
+  done < <(echo "${fetchGithubData[productiveDay]}")
+
+  for weekday in "${!commitCount[@]}"; do
+    echo "Commits on $weekday: ${commitCount[$weekday]}"
+  done
+
+  ## TODO: get total commit count
+  totalCommitCount=""
+
+  ## calculate percentage of counted weekdays
+  for weekday in "${weekdays[@]}"; do
+    if [[ -z ${commitCount[$weekday]} ]]; then
+      ${commitCount[$weekday]}=0
+      ${percentage[$weekday]}=0.00%
+    else
+      ${percentage[$weekday]}="$(printf "%.2f\n" $(bc -l <<< "(${commitCount[$weekday]} / $totalCommitCount) * 100"))%"
+    fi
+  done
+
+  echo "${weekdays[*]} ${commitCount[*]} ${percentage[*]}"
+}
+## TODO create  new _filterGithubProductiveTime() function
+
+_OLDfilterGithubProductiveDay() {
   local -i xRepoMax="$(jq -r ".data.user.repositories.totalCount" <<< "${fetchGithubData[productiveDay]}")"
-  local -i yCommitMax; local -i totalCommitCount 
+  local -i yCommitMax; local -i totalCommitCount
   local -a filter
   local -i mondayCommitCount; local -i tuesdayCommitCount
   local -i wednesdayCommitCount; local -i thursdayCommitCount
@@ -773,7 +896,7 @@ _filterGithubProductiveTime() {
   ## amount of commits
   local -i xRepoMax="$(jq -r ".data.user.repositories.totalCount" <<< "${fetchGithubData[productiveTime]}")"
   local -i yCommitMax
-  local -i totalCommitCount 
+  local -i totalCommitCount
   local -a filter; local datestamp; local timestamp
   local -i hours; local -i minutes
   local -i morningCommitCount; local -i daytimeCommitCount
@@ -790,6 +913,7 @@ _filterGithubProductiveTime() {
     for ((y = 0; y < $yCommitMax; y++)); do
       filter=(".data.user.repositories.edges[$x]" ".node.defaultBranchRef.target.history.edges[$y]" ".node.committedDate")
       datestamp="$(jq -r "${filter[0]} | ${filter[1]} | ${filter[2]}" <<< "${fetchGithubData[productiveTime]}")"
+      echo $datestamp
 
       ## truncate date from datestamp, only time needed
       timestamp="${datestamp##*T}"
@@ -936,26 +1060,27 @@ _writeWakaTemplate() {
   _writeReadme wakatime
 }
 ########################### general func end ###########################
-_writeReadme() {                                                                
-  ## Update new API data/content into readme                                       
-  cat "$template" > "$readme"                                                      
-  [[ "$1" == wakatime ]] && _cleanUpFiles wakatime                              
-  [[ "$1" == github ]] && _cleanUpFiles github                                  
-}                                                                                  
-_cleanUpFiles() {                                                               
+_writeReadme() {
+  ## Update new API data/content into readme
+  cat "$template" > "$readme"
+  [[ "$1" == wakatime ]] && _cleanUpFiles wakatime
+  [[ "$1" == github ]] && _cleanUpFiles github
+}
+_cleanUpFiles() {
   [[ "$1" == wakatime ]] && local -a comments=("${wakaComments[@]}")
-  [[ "$1" == github ]] && local -a comments=("${githubComments[@]}")                  
-  for comment in "${comments[@]}"; do                                              
-    ## remove comments from README.md                                              
-    sed -i "/<!--$service-$comment-start-->/d" "$readme"                           
-    sed -i "/<!--$service-$comment-end-->/d" "$readme"                             
-    ## remove content between comments from template                               
+  [[ "$1" == github ]] && local -a comments=("${githubComments[@]}")
+  for comment in "${comments[@]}"; do
+    ## remove comments from README.md
+    sed -i "/<!--$service-$comment-start-->/d" "$readme"
+    sed -i "/<!--$service-$comment-end-->/d" "$readme"
+    ## remove content between comments from template
     perl -i -0777pe "s/<!--$service-$comment-start-->.*<!--$service-$comment-end-->/<!--$service-$comment-start-->\n  <!--$service-$comment-end-->/s" "$template"
-  done                                                                             
+  done
 }
 _main
 
 exit
+
 
 
 ################################# stuff ################################
