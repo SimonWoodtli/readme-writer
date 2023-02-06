@@ -1,6 +1,4 @@
 #!/usr/bin/bash
-##TODO Refactor: 'nameWithOwner' is very useful it gives you something like "SimonWoodtli/projects"
-## implement it where you see fit
 _printQueryUser() {
   #userInfoQuery
   echo '{
@@ -75,11 +73,7 @@ _printQueryPullRequests() {
           mergedAt
           repository {
           nameWithOwner
-            name
-            url
-            owner {
-              login
-            }
+          url
           }
         }
       }
