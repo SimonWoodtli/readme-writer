@@ -84,8 +84,8 @@ _checkHtmlComments() {
     wakatime) local -a lookupComments=("languages" "editors" "operating_systems" "projects" "timezone");;
     ## since graphql is used here, the keyword could be anything as queries are
     ## needed and filtering with jq works with more generic terms.
-    github) local -a lookupComments=("productiveTime" "productiveDay") ;;
-    #local -a lookupComments=("projectsOwn" "projectsAll" "projectsCount" "hire" "pullRequests" "zet" "forks" "stars" "gists" "followers" "sponsors" "languages" "productiveDay" "productiveTime");;
+    github) #local -a lookupComments=( "languages" ) ;;
+    local -a lookupComments=("projectsOwn" "projectsAll" "projectsCount" "hire" "pullRequests" "zet" "forks" "stars" "gists" "followers" "sponsors" "languages" "productiveDay" "productiveTime");;
     #
     #
     #
@@ -138,7 +138,7 @@ _fetchGithubData() {
       gists) fetchGithubData+=( ["$githubComment"]="$(_queryGithubData _printQueryGists)" );;
       followers) fetchGithubData+=( ["$githubComment"]="$(_queryGithubData _printQueryFollowers)" );;
       sponsors) fetchGithubData+=( ["$githubComment"]="$(_queryGithubData _printQuerySponsors)" );;
-      languages) fetchGithubData+=( ["$githubComment"]="$(_queryGithubData _printQueryLanguages)" );;
+      languages) fetchGithubData+=( ["$githubComment"]="$(_fetchGithubLanguagesPages)" );;
       #productiveDay) fetchGithubData+=( ["$githubComment"]="$(_queryGithubData _printQueryProductivity)" );;
       #productiveTime) fetchGithubData+=( ["$githubComment"]="$(_queryGithubData _printQueryProductivity)" );;
 
@@ -146,9 +146,25 @@ _fetchGithubData() {
       productiveTime) fetchGithubData+=( ["$githubComment"]="$(_fetchGithubProductiveRepoPages)" );;
     esac
   done
-  #echo "${fetchGithubData[productiveDay]}" | grep committedDate | wc -l #c
+  #echo "${fetchGithubData[languages]}"
+  #exit
 
   _filterGithubData
+}
+_fetchGithubLanguagesPages() {
+  # request first query
+  response="$(_queryGithubData _printQueryLanguagesFirstPage)"
+  ## add first 100 repos page with it's primary language
+  data="$response"
+  hasNextPage=$(jq '.data.search.pageInfo.hasNextPage' <<< $response)
+  ## loop over all repo pages and keep adding new repo page data
+  while [[ $hasNextPage == "true" ]]; do
+    languageCursor=$(jq '.data.search.pageInfo.endCursor' <<< $response | tr -d '"')
+    response="$(_queryGithubData _printQueryLanguagesNextPage)"
+    data+="$response"
+    hasNextPage=$(jq '.data.search.pageInfo.hasNextPage' <<< $response)
+  done
+  echo "$data"
 }
 
 _fetchGithubProductiveRepoPages() {
@@ -176,7 +192,7 @@ _fetchGithubProductiveRepoPages() {
     data+="$responseMain"
     ## check if new repo page has more than 100 commits and add to data
     ##FIXME the last repo page has not iMax=100 but would need the
-    #remaining repos set as iMax
+    #remaining repos set as iMax, it works but it's just ugly this way
     data+="$(_fetchGithubProductiveCommitPages)"
     #_filterGithubProductiveDay && [[ $x == 3 ]] && exit
     ## check if more repo pages available
@@ -241,6 +257,8 @@ _filterGithubData() {
 
   #_filterGithubProductiveDay
   #_filterGithubProductiveTime
+  #_filterGithubLanguages
+  #exit
 
   ## loop to set iMax:
   for githubComment in "${githubComments[@]}"; do
@@ -250,7 +268,7 @@ _filterGithubData() {
       hire) iMax[$githubComment]=1;;
       pullRequests|zet|forks|stars|gists|followers|sponsors) iMax[$githubComment]=5;;
       ## special treatment with pre processing in own functions:
-      languages) topLanguages=( $(_filterGithubTopLanguages) )
+      languages) IFS=';' topLanguages=( $(_filterGithubLanguages) )
         iMax[$githubComment]=${topLanguages[0]}; local -i iLang=1;;
       productiveDay) IFS=';' productivityDay=( $(_filterGithubProductiveDay) )
         iMax[$githubComment]=7; local -i iDay=0;;
@@ -259,7 +277,7 @@ _filterGithubData() {
     esac
   done
 
-  #for e in ${productivityDay[@]}; do
+  #for e in ${topLanguages[@]}; do
   #  echo $e
   #done
 
@@ -378,11 +396,11 @@ _filterGithubData() {
           filter2="";;
         languages)
           filter0="* ${topLanguages[$iLang]}"
-          filter1="${topLanguages[$((iLang+1))]}"
+          filter1="${topLanguages[$((iLang+iMax[$githubComment]))]}"
           [[ "$filter1" == 1 ]] && filter1="$filter1 repo"                    \
             || filter1="$filter1 repos"
-          filter2="${topLanguages[$((iLang+2))]}"
-          iLang+=3;;
+          filter2="${topLanguages[$((iLang+(2*iMax[$githubComment])))]}"
+          iLang+=1;;
         productiveDay)
           #filter0="* ${productivityDay[0]}"
           #filter0="${productivityDay[1]}"
@@ -436,7 +454,7 @@ _OLDfilterGithubData() {
   local -a productivityDaytime; local -a productivityDay
   local -a topLanguages; local -a filter
   ## fetch&filter directly from filter functions
-  topLanguages=( $(_filterGithubTopLanguages) )
+  topLanguages=( $(_filterGithubLanguages) )
   IFS=';' productivityDaytime=( $(_filterGithubProductiveTime) )
   IFS=';' productivityDay=( $(_filterGithubProductiveDay) )
 
@@ -736,42 +754,27 @@ _createGithubTimeAgo() {
       fi;;
   esac
 }
-_filterGithubTopLanguages() {
-  ##filter languages:
-  ##TODO many of those top lang related code should be outsourced into functions
-  ## reposCountTotal gets the total amount of found repositories
-  local -i reposCountTotal="$(jq -r ".data.search.repositoryCount" <<< "${fetchGithubData[languages]}")"
-  local -A languagesNameCount
-  local -i languagesCountTotal
-  local -a languagesArray
-  local percentageName #cannot be an integer type, bash doesn't support floats!
-  for ((i = 0; i < $reposCountTotal; i++)); do
-    filter=(".data.search.edges[$i]" ".node")
-    languageName="$(jq -r "${filter[0]} | ${filter[1]}.primaryLanguage.name" <<< "${fetchGithubData[languages]}")"
-    #can't skip null need that to calculate percentage correctly
-    #[[ $language == null ]] && continue
-    grep -q "$languageName" <<< "${!languagesNameCount[@]}"                    \
-      && languagesNameCount[$languageName]=$((languagesNameCount[$languageName] + 1)) \
-      || { languagesNameCount+=( [$languageName]=1 ); languagesCountTotal+=1; }
-  done
-  ## if 'null' language exists, substract all counted null appearances, also remove 1 from languagesCountTotal
-  if [[ -n ${languagesNameCount[null]} ]]; then
-    languagesCountTotal=$((languagesCountTotal-1))
-    reposCountTotal=$((reposCountTotal - ${languagesNameCount[null]}))
-  fi
 
-  ##loop over keys:  keys = languageNames, values = counted number of language
-  #echo "$languagesCountTotal"
-
-  languagesArray+=( "${languagesCountTotal}" )
-  for languageName in "${!languagesNameCount[@]}"; do
-    ## skip loop if null
-    [[ $languageName == null ]] && continue
-    percentageName="$(awk '{print sprintf("%.2f", $1/$2*100)}' <<< "${languagesNameCount[$languageName]} $reposCountTotal")%"
-    #percentageName=$(perl -e 'printf "%.2f\n", '"(${languagesNameCount[$languageName]} / $reposCountTotal)*100"' ')
-    languagesArray+=( "${languageName}" "${languagesNameCount[$languageName]}" "${percentageName}" )
+_filterGithubLanguages() {
+  local -A reposCount; local -A percentage
+  ## if response of primary language is null it does not give "name": "foo"
+  ## line, hence directly greping name with wc works
+  local -i totalReposCount=$(grep '"name"' <<< "${fetchGithubData[languages]}" | wc -l)
+  local language; local -i totalLanguagesCount=0
+  ## count repos per language
+  while read line; do
+    if [[ $line =~ \"name\":.* ]]; then
+      language="$(grep -o ':.*' <<< $line | sed 's|^...||' | tr -d '"')"
+      reposCount[$language]=$((reposCount[$language]+1))
+    fi
+  done < <(echo "${fetchGithubData[languages]}")
+  ## calculate percentage
+  for language in "${!reposCount[@]}"; do
+    percentage[$language]="$(printf "%.2f\n" $(bc -l <<< "(${reposCount[$language]} / $totalReposCount) * 100"))%"
+    totalLanguagesCount+=1
   done
-  echo "${languagesArray[*]}"
+
+  echo "${totalLanguagesCount};${!reposCount[*]};${reposCount[*]};${percentage[*]}"
 }
 _filterGithubProductiveDay() {
   local -A commitCount; local -A percentage
@@ -844,6 +847,43 @@ _filterGithubProductiveTime() {
   daytimes=( "🌅 Morning" "🌞 Daytime" "🌇 Evening" "🌃 Night" )
 
   echo "${daytimes[*]};${commitCount[*]};${percentage[*]}"
+}
+_OLDfilterGithubLanguages() {
+  ##filter languages:
+  ##TODO many of those top lang related code should be outsourced into functions
+  ## reposCountTotal gets the total amount of found repositories
+  local -i reposCountTotal="$(jq -r ".data.search.repositoryCount" <<< "${fetchGithubData[languages]}")"
+  local -A languagesNameCount
+  local -i languagesCountTotal
+  local -a languagesArray
+  local percentageName #cannot be an integer type, bash doesn't support floats!
+  for ((i = 0; i < $reposCountTotal; i++)); do
+    filter=(".data.search.edges[$i]" ".node")
+    languageName="$(jq -r "${filter[0]} | ${filter[1]}.primaryLanguage.name" <<< "${fetchGithubData[languages]}")"
+    #can't skip null need that to calculate percentage correctly
+    #[[ $language == null ]] && continue
+    grep -q "$languageName" <<< "${!languagesNameCount[@]}"                    \
+      && languagesNameCount[$languageName]=$((languagesNameCount[$languageName] + 1)) \
+      || { languagesNameCount+=( [$languageName]=1 ); languagesCountTotal+=1; }
+  done
+  ## if 'null' language exists, substract all counted null appearances, also remove 1 from languagesCountTotal
+  if [[ -n ${languagesNameCount[null]} ]]; then
+    languagesCountTotal=$((languagesCountTotal-1))
+    reposCountTotal=$((reposCountTotal - ${languagesNameCount[null]}))
+  fi
+
+  ##loop over keys:  keys = languageNames, values = counted number of language
+  #echo "$languagesCountTotal"
+
+  languagesArray+=( "${languagesCountTotal}" )
+  for languageName in "${!languagesNameCount[@]}"; do
+    ## skip loop if null
+    [[ $languageName == null ]] && continue
+    percentageName="$(awk '{print sprintf("%.2f", $1/$2*100)}' <<< "${languagesNameCount[$languageName]} $reposCountTotal")%"
+    #percentageName=$(perl -e 'printf "%.2f\n", '"(${languagesNameCount[$languageName]} / $reposCountTotal)*100"' ')
+    languagesArray+=( "${languageName}" "${languagesNameCount[$languageName]}" "${percentageName}" )
+  done
+  echo "${languagesArray[*]}"
 }
 
 _OLDfilterGithubProductiveDay() {
