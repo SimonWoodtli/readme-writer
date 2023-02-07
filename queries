@@ -1,6 +1,4 @@
 #!/usr/bin/bash
-##TODO Refactor: 'nameWithOwner' is very useful it gives you something like "SimonWoodtli/projects"
-## implement it where you see fit
 _printQueryUser() {
   #userInfoQuery
   echo '{
@@ -75,11 +73,7 @@ _printQueryPullRequests() {
           mergedAt
           repository {
           nameWithOwner
-            name
-            url
-            owner {
-              login
-            }
+          url
           }
         }
       }
@@ -206,14 +200,17 @@ _printQuerySponsors() {
   }
 }'
 }
-_printQueryLanguages() {
+_printQueryLanguagesFirstPage() {
   echo '{
-  search(query: "user:'$user'", type: REPOSITORY, first: 100) {
+  search(query: "user:'$user'", type: REPOSITORY, first: 2) {
     repositoryCount
+    pageInfo {
+      endCursor
+      hasNextPage
+    }
     edges {
       node {
         ... on Repository {
-          name
           nameWithOwner
           primaryLanguage {
             name
@@ -222,6 +219,27 @@ _printQueryLanguages() {
       }
     }
   }
+}'
+}
+_printQueryLanguagesNextPage() {
+  echo '{                                                                       
+  search(query: "user:'$user'", type: REPOSITORY, first: 2, after: "'$languageCursor'") {                 
+    repositoryCount
+    pageInfo {
+      endCursor
+      hasNextPage
+    }
+    edges {                                                                     
+      node {                                                                    
+        ... on Repository {                                                     
+          nameWithOwner                                                         
+          primaryLanguage {                                                     
+            name                                                                
+          }                                                                     
+        }                                                                       
+      }                                                                         
+    }                                                                           
+  }                                                                             
 }'
 }
 _printQueryProductivityFirstRepoPage() {
