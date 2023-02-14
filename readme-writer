@@ -1,18 +1,22 @@
 #!/usr/bin/bash
 ## set the personal access token & key to github env. var secret
-declare wakaKey="$PERSONAL_WAKATIME_KEY"
-declare githubKey="$PERSONAL_GITHUB_TOKEN"
-#source api-keys #Temporary for testing the script
+#declare wakaKey="$PERSONAL_WAKATIME_KEY"
+#declare githubKey="$PERSONAL_GITHUB_TOKEN"
+source api-keys #Temporary for testing the script
 # dependencies: bash, sed, jq, printf, perl
-declare flag="$1"
-declare template="$2"
-declare readme="$3"
-## Check if flag is given or reassign variables
-if [[ "$flag" != -* ]]; then
-  flag=""
-  template="$1"
-  readme="$2"
-fi
+declare -A flags
+## check flags
+while getopts 'cmht' OPTION; do
+  case "$OPTION" in
+    c) flags[c]="sinceAccCreation";;
+    m) flags[m]="sinceLastMonth";;
+    h) flags[h]="htmlBlockList";;
+    t) flags[t]="markdownBlockTable";;
+  esac
+done
+shift "$(($OPTIND -1))"
+declare template="$1"
+declare readme="$2"
 ## Check if template and readme are right format or exit
 [[ "$template" == *.tpl ]] || exit 1
 [[ "$readme" == *.md ]] || exit 1
@@ -31,14 +35,17 @@ _main() {
   IFS=" " read -r -a githubComments <<< "$(_checkHtmlComments github)"
   if [[ -n "${githubComments[*]}" ]]; then
     source queries
-    declare services+=("github")
+    local services+=("github")
     ## Get username and id
-    declare userData="$(_queryGithubData _printQueryUser)"
-    declare user="$(jq -r .data.viewer.login <<< "$userData")"
-    declare id="$(jq -r .data.viewer.id <<< "$userData")"
-    declare since="$(date -u -d "$date -1 year" +"%FT%TZ")"
-    [[ "$flag" == "-m" ]] && since="$(date -u -d "$date -1 month" +"%FT%TZ")"
-    [[ "$flag" == "-c" ]] && since="$(jq -r .data.viewer.createdAt <<< "$userData")"
+    local declare userData="$(_queryGithubData _printQueryUser)"
+    local declare user="$(jq -r .data.viewer.login <<< "$userData")"
+    local declare id="$(jq -r .data.viewer.id <<< "$userData")"
+    local declare since
+    if [[ -z "${flags[m]}" && -z "${flags[c]}" ]]; then
+      since="$(date -u -d "$date -1 year" +"%FT%TZ")"
+    fi
+    [[ "${flags[m]}" == "sinceLastMonth" ]] && since="$(date -u -d "$date -1 month" +"%FT%TZ")"
+    [[ "${flags[c]}" == "sinceAccCreation" ]] && since="$(jq -r .data.viewer.createdAt <<< "$userData")"
     ## difference between waka REST and github graphql, github
     ## requires already a looping over comments, because multiple queries
     ## are needed
@@ -101,7 +108,7 @@ _createTimeAgo() {
 _createStatusBar() {
   ## status bar total width/blocks
   local -i width=25; local -i empty
-  local percent="$1" 
+  local percent="$1"
   local filled; local blockFilled; local blockEmpty
   ## calc with correct rounding amount of filled and empty blocks
   filled="$(bc -l <<< "($width * $percent) / 100")"
@@ -186,7 +193,7 @@ _fetchGithubLanguagesPages() {
 }
 _fetchGithubProductiveRepoPages() {
   local responseMain; local data; local repoHasNextPage; local repoCursor
-  local -i iMax 
+  local -i iMax
   # Call the first query
   responseMain="$(_queryGithubData _printQueryProductivityFirstRepoPage)"
   ## add first repo page with first 100 commits per repo to data
@@ -314,14 +321,14 @@ _filterGithubData() {
           urlRepo="$(jq -r "${filter[0]} | ${filter[1]}.url" <<< "${fetchGithubData["$githubComment"]}")"
           description="$(jq -r "${filter[0]} | ${filter[1]}.description" <<< "${fetchGithubData["$githubComment"]}")"
           datestamp="$(_createTimeAgo "$(jq -r "${filter[0]} | ${filter[1]}.pushedAt" <<< "${fetchGithubData["$githubComment"]}")")"
-          filter0="* [$nameWithOwner]($urlRepo)"
+          filter0="[$nameWithOwner]($urlRepo)"
           filter1="- $description"
           filter2="($datestamp)";;
         projectsCount) filter=(".data.user.publicRepositories.totalCount" ".data.user.privateRepositories.totalCount")
           repoCount="$(jq -r "${filter[$i]}" <<< "${fetchGithubData["$githubComment"]}")"
           ## skip inner loop if no data found
           [[ "$repoCount" == null ]] && continue
-          filter0="* 💾"
+          filter0="💾"
           filter1="$repoCount"
           ## filter2 first element is public second is Private
           if [[ "$i" -eq 0 ]]; then
@@ -333,8 +340,8 @@ _filterGithubData() {
           fi;;
         hire) filter1=""; filter2=""
           hireable="$(jq -r .data.viewer.isHireable <<< "$userData")"
-          [[ "$hireable" == true ]] && filter0="> 💼 Open for hire now"       \
-            || filter0="> 🚫 Not available for hire" ;;
+          [[ "$hireable" == true ]] && filter0="💼 Open for hire now"         \
+            || filter0="🚫 Not available for hire" ;;
         pullRequests) filter=(".data.search.edges[$i]" ".node")
           nameWithOwner="$(jq -r "${filter[0]} | ${filter[1]}.repository.nameWithOwner" <<< "${fetchGithubData["$githubComment"]}")"
           ## break inner loop if no data found
@@ -343,7 +350,7 @@ _filterGithubData() {
           urlRequest="$(jq -r "${filter[0]} | ${filter[1]}.url" <<< "${fetchGithubData["$githubComment"]}")"
           titleRequest="$(jq -r "${filter[0]} | ${filter[1]}.title" <<< "${fetchGithubData["$githubComment"]}")"
           datestamp="$(_createTimeAgo "$(jq -r "${filter[0]} | ${filter[1]}.mergedAt" <<< "${fetchGithubData["$githubComment"]}")")"
-          filter0="* [$titleRequest]($urlRequest)"
+          filter0="[$titleRequest]($urlRequest)"
           filter1="on [$nameWithOwner]($urlRepo)"
           filter2="($datestamp)";;
         zet) filter=(".data.repository.refs.edges[$i]" ".node.target" ".node.name" )
@@ -354,7 +361,7 @@ _filterGithubData() {
           isoSec="$(jq -r "${filter[0]} | ${filter[2]}" <<< "${fetchGithubData["$githubComment"]}")"
           commitMsg="$(jq -r "${filter[0]} | ${filter[1]}.message" <<< "${fetchGithubData["$githubComment"]}")"
           datestamp="$(_createTimeAgo "$(jq -r "${filter[0]} | ${filter[1]}.committedDate" <<< "${fetchGithubData["$githubComment"]}")")"
-          filter0="* [$nameWithOwner]($urlCommit/$isoSec)"
+          filter0="[$nameWithOwner]($urlCommit/$isoSec)"
           filter1="- $commitMsg"
           filter2="($datestamp)";;
         forks) filter=(".data.user.repositories.edges[$i]" ".node")
@@ -364,7 +371,7 @@ _filterGithubData() {
           nameWithOwner="$(jq -r "${filter[0]} | ${filter[1]}.nameWithOwner" <<< "${fetchGithubData["$githubComment"]}")"
           description="$(jq -r "${filter[0]} | ${filter[1]}.description" <<< "${fetchGithubData["$githubComment"]}")"
           datestamp="$(_createTimeAgo "$(jq -r "${filter[0]} | ${filter[1]}.createdAt" <<< "${fetchGithubData["$githubComment"]}")")"
-          filter0="* [$nameWithOwner]($urlRepo)"
+          filter0="[$nameWithOwner]($urlRepo)"
           filter1="- $description"
           filter2="($datestamp)";;
         stars) filter=(".data.user.starredRepositories.edges[$i]" ".node" ".starredAt")
@@ -374,7 +381,7 @@ _filterGithubData() {
           nameWithOwner="$(jq -r "${filter[0]} | ${filter[1]}.nameWithOwner" <<< "${fetchGithubData["$githubComment"]}")"
           description="$(jq -r "${filter[0]} | ${filter[1]}.description" <<< "${fetchGithubData["$githubComment"]}")"
           datestamp="$(_createTimeAgo "$(jq -r "${filter[0]} | ${filter[2]}" <<< "${fetchGithubData["$githubComment"]}")")"
-          filter0="* [$nameWithOwner]($urlRepo)"
+          filter0="[$nameWithOwner]($urlRepo)"
           filter1="- $description"
           filter2="($datestamp)";;
           #echo "0: $filter0 1: $filter1 2: $filter2"
@@ -386,7 +393,7 @@ _filterGithubData() {
           owner="$(jq -r "${filter[0]} | ${filter[1]}.owner.login" <<< "${fetchGithubData["$githubComment"]}")"
           description="$(jq -r "${filter[0]} | ${filter[1]}.description" <<< "${fetchGithubData["$githubComment"]}")"
           datestamp="$(_createTimeAgo "$(jq -r "${filter[0]} | ${filter[1]}.createdAt" <<< "${fetchGithubData["$githubComment"]}")")"
-          filter0="* [$owner/$fileName]($urlGist)"
+          filter0="[$owner/$fileName]($urlGist)"
           filter1="- $description"
           filter2="($datestamp)";;
         followers) filter=(".data.user.followers.edges[$i]" ".node")
@@ -395,7 +402,7 @@ _filterGithubData() {
           [[ "$urlFollower" == null ]] && break
           nameFollower="$(jq -r "${filter[0]} | ${filter[1]}.login" <<< "${fetchGithubData["$githubComment"]}")"
           workplaceFollower="$(jq -r "${filter[0]} | ${filter[1]}.company" <<< "${fetchGithubData["$githubComment"]}")"
-          filter0="* [$nameFollower]($urlFollower)"
+          filter0="[$nameFollower]($urlFollower)"
           [[ "$workplaceFollower" == null ]] && filter1="- 💼 Unknown"        \
             || filter1="- 💼 $workplaceFollower"
           filter2="";;
@@ -405,11 +412,11 @@ _filterGithubData() {
           [[ "$urlSponsor" == null ]] && break
           nameSponsor="$(jq -r "${filter[0]} | ${filter[1]}.login" <<< "${fetchGithubData[$githubComment]}")"
           datestamp="$(_createTimeAgo "$(jq -r "${filter[0]} | ${filter[2]}" <<< "${fetchGithubData["$githubComment"]}")")"
-          filter0="* [$nameSponsor]($urlSponsor)"
+          filter0="[$nameSponsor]($urlSponsor)"
           filter1="($datestamp)"
           filter2="";;
         languages)
-          filter0="* ${topLanguages[$iLang]}"
+          filter0="${topLanguages[$iLang]}"
           x=$((iLang+iMax[$githubComment]))
           filter1="${topLanguages[$x]}"
           [[ "$filter1" == 1 ]] && filter1="$filter1 repo"                    \
@@ -419,7 +426,7 @@ _filterGithubData() {
           filter2="$(_createStatusBar "${topLanguages[$x]}")   ${topLanguages[$x]}%"
           iLang+=1;;
         productiveDay)
-          filter0="* ${productivityDay[$iDay]}"
+          filter0="${productivityDay[$iDay]}"
           ## increment 7 (days) to skip to commitCount elements
           x=$((iDay+7))
           filter1="${productivityDay[$x]}"
@@ -431,7 +438,7 @@ _filterGithubData() {
           filter2="$(_createStatusBar "${productivityDay[$x]}")   ${productivityDay[$x]}%"
           iDay+=1;;
         productiveTime)
-          filter0="* ${productivityDaytime[$iTime]}"
+          filter0="${productivityDaytime[$iTime]}"
           ## increment 4 (daytimes) to skip to commitCount elements
           x=$((iTime+4))
           filter1="${productivityDaytime[$x]}"
@@ -442,6 +449,7 @@ _filterGithubData() {
           filter2="$(_createStatusBar "${productivityDaytime[$x]}")   ${productivityDaytime[$x]}%"
           iTime+=1;;
       esac
+
       ##DEBUG:
       #echo "0: $filter0 1: $filter1 2: $filter2"
       ## create three arrays with filter strings
@@ -469,14 +477,45 @@ _createGithubMarkdownBlock() {
     ## check if data is still found, if not skip loop to avoid printing
     #empty lines
     [[ -n "${filterGithubStart["${commentArg}$i"]}" ]] || continue
-    ## set space for formatting text
+    ## set space to format text for block, print first line for table
     case "$commentArg" in
-      languages) space0=20; space1=20;;
-      productiveDay) space0=20; space1=20;;
-      productiveTime) space0=22; space1=20;;
+      languages) ## tables:
+        if [[ "${flags[t]}" == "markdownBlockTable" ]]; then
+          [[ $i -eq 0 ]] && printf "%s\n" "| Primary Language | Repo [count] | Relative Repo [bar chart] | Relative Repo [%] |"
+        ## markdown block:
+        else
+          space0=30; space1=30
+        fi;;
+      productiveDay) ## tables:
+        if [[ "${flags[t]}" == "markdownBlockTable" ]]; then
+          [[ $i -eq 0 ]] && printf "%s\n" "| Weekday | Commit [count] | Relative Commit [bar chart] | Relative Commit [%] |"
+        ## markdown block:
+        else
+          space0=30; space1=30
+        fi;;
+      productiveTime) ## tables:
+        if [[ "${flags[t]}" == "markdownBlockTable" ]]; then
+          [[ $i -eq 0 ]] && printf "%s\n" "| Daytime | Commit [count] | Relative Commit [bar chart] | Relative Commit [%] |"
+        ## markdown block:
+        else
+          space0=32; space1=30
+        fi;;
     esac
-    ## generic print statement:
-    printf "%-*s %-*s %-*s\n" $space0 "${filterGithubStart["${commentArg}$i"]}" $space1 "${filterGithubMiddle["${commentArg}$i"]}" $space2 "${filterGithubEnd["${commentArg}$i"]}"
+    ## print block or table
+    case "$commentArg" in
+      languages|productiveDay|productiveTime) ## table or markdown block print:
+        if [[ "${flags[t]}" == "markdownBlockTable" ]]; then
+          [[ $i -eq 0 ]] && printf "%s\n" "|:-:|:-:|:-:|:-:|"
+          printf "| %s | %s | %s | %s |\n" "${filterGithubStart["${commentArg}$i"]}" "${filterGithubMiddle["${commentArg}$i"]}" "${filterGithubEnd["${commentArg}$i"]:0:25}" "${filterGithubEnd["${commentArg}$i"]:28}"
+        else
+          [[ $i -eq 0 ]] && printf "%s\n" '```'
+          printf "• %-*s %-*s %-*s\n" $space0 "${filterGithubStart["${commentArg}$i"]}" $space1 "${filterGithubMiddle["${commentArg}$i"]}" $space2                        "${filterGithubEnd["${commentArg}$i"]}"
+          ## add closing block ``` at last line
+          [[ $i -eq $((iMax[$commentArg]-1)) ]] && printf "%s\n" '```'
+        fi;;
+      *) ## generic markdown list print:
+        printf "* %-*s %-*s %-*s\n" $space0 "${filterGithubStart["${commentArg}$i"]}" $space1 "${filterGithubMiddle["${commentArg}$i"]}" $space2 "${filterGithubEnd["${commentArg}$i"]}";;
+    esac
   done
 }
 ########################### github pre filter ##########################
@@ -590,7 +629,7 @@ _filterWakaData() {
     ## check if wakaComment is timezone
     if [[ "$wakaComment" == timezone ]]; then
       filterWakaLines+=( ["$wakaComment"NameLines]="1" )
-      filterWakaName+=( ["${wakaComment}0"]="* $(jq -r ".data.timezone" <<< "$fetchWakaData")" )
+      filterWakaName+=( ["${wakaComment}0"]="$(jq -r ".data.timezone" <<< "$fetchWakaData")" )
       ## skip rest of loop for timezone
       continue
     fi
@@ -606,7 +645,7 @@ _filterWakaData() {
     ## Create associavtive array from data: Name, Percentage, Timestamp
     ## loops over max. elements found per comment
     for ((i = 0; i < "${filterWakaLines["${wakaComment}NameLines"]}"; i++)); do
-      filterWakaName+=( ["${wakaComment}$i"]="* $(jq -r ".data.$wakaComment | .[$i] | .name" <<< "$fetchWakaData")" )
+      filterWakaName+=( ["${wakaComment}$i"]="$(jq -r ".data.$wakaComment | .[$i] | .name" <<< "$fetchWakaData")" )
       filterWakaPercent+=( ["${wakaComment}$i"]="$(jq -r ".data.$wakaComment | .[$i] | .percent" <<< "$fetchWakaData")" )
       filterWakaPercent["${wakaComment}$i"]="$(_createStatusBar "${filterWakaPercent["${wakaComment}$i"]}")   ${filterWakaPercent["${wakaComment}$i"]}%"
       filterWakaText+=( ["${wakaComment}$i"]="$(jq -r ".data.$wakaComment | .[$i] | .text" <<< "$fetchWakaData")" )
@@ -618,7 +657,7 @@ _writeWakaTemplate
 }
 _writeWakaTemplate() {
   local callFunction
-  if [[ "$flag" == "-H" ]]; then
+  if [[ "${flags[h]}" == "htmlBlockList" ]]; then
     callFunction="_createWakaHtmlBlock"
   else
     callFunction="_createWakaMarkdownBlock"
@@ -630,17 +669,46 @@ _writeWakaTemplate() {
 }
 _createWakaMarkdownBlock() {
   local commentArg="$1"
-  local space0=20; local space1=20; local space2=0
+  local space0=30; local space1=30; local space2=0
   for ((i = 0; i < "${filterWakaLines["${commentArg}NameLines"]}"; i++)); do
     ## check if data is still found, if not skip loop to avoid printing
     #empty lines
     [[ -n "${filterWakaName["${commentArg}$i"]}" ]] || continue
-    ## set space for formatting text
+    ## set space for formatting text and first line/header for table
     case "$commentArg" in
+      languages) ## tables:
+        if [[ "${flags[t]}" == "markdownBlockTable" ]]; then
+          [[ $i -eq 0 ]] && printf "%s\n" "| Language | Time Spent [hrs:mins] | Relative Time Spent [bar chart] | Relative Time Spent [%] |"
+        fi;;
+      projects) ## tables:
+        if [[ "${flags[t]}" == "markdownBlockTable" ]]; then
+          [[ $i -eq 0 ]] && printf "%s\n" "| Project | Time Spent [hrs:mins] | Relative Time Spent [bar chart] | Relative Time Spent [%] |"
+        fi;;
+      editors) ## tables:
+        if [[ "${flags[t]}" == "markdownBlockTable" ]]; then
+          [[ $i -eq 0 ]] && printf "%s\n" "| Editor | Time Spent [hrs:mins] | Relative Time Spent [bar chart] | Relative Time Spent [%] |"
+        fi;;
+      operating_systems) ## tables: 
+        if [[ "${flags[t]}" == "markdownBlockTable" ]]; then
+          [[ $i -eq 0 ]] && printf "%s\n" "| Operating System | Time Spent [hrs:mins] | Relative Time Spent [bar chart] | Relative Time Spent [%] |"
+        fi;;
       timezone) space0=0; space1=0;;
     esac
-  ## generic print statement:
-  printf "%-*s %-*s %-*s\n" $space0 "${filterWakaName["${commentArg}$i"]}" $space1 "${filterWakaText["${commentArg}$i"]}" $space2 "${filterWakaPercent["${commentArg}$i"]}"
+    ## print statements:
+    case "$commentArg" in
+      timezone) ## print list:
+        printf "* %-*s %-*s %-*s\n" $space0 "${filterWakaName["${commentArg}$i"]}" $space1 "${filterWakaText["${commentArg}$i"]}" $space2 "${filterWakaPercent["${commentArg}$i"]}";;
+      *) ## print block or table
+        if [[ "${flags[t]}" == "markdownBlockTable" ]]; then
+          [[ $i -eq 0 ]] && printf "%s\n" "|:-:|:-:|:-:|:-:|"
+          printf "| %s | %s | %s | %s |\n" "${filterWakaName["${commentArg}$i"]}" "${filterWakaText["${commentArg}$i"]}" "${filterWakaPercent["${commentArg}$i"]:0:25}"  "${filterWakaPercent["${commentArg}$i"]:28}"
+        else
+          [[ $i -eq 0 ]] && printf "%s\n" '```'
+          printf "• %-*s %-*s %-*s\n" $space0 "${filterWakaName["${commentArg}$i"]}" $space1 "${filterWakaText["${commentArg}$i"]}" $space2                            "${filterWakaPercent["${commentArg}$i"]}"
+          ## FIXME add closing block ``` at last line
+          [[ $i -eq $((filterWakaLines["${commentArg}NameLines"]-1)) ]] && printf "%s\n" '```'
+        fi;;
+    esac
   done
 }
 _createWakaHtmlBlock() {
@@ -660,7 +728,7 @@ _createWakaHtmlBlock() {
     printf "%s" "$htmlBlock" && return 0
   fi
   for ((i = 0 ; i < "${filterWakaLines["${commentArg}NameLines"]}" ; i++)); do
-    htmlBlock+="\n<span>${filterWakaName["${commentArg}$i"]:2}</span>&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;<span>${filterWakaText["${commentArg}$i"]}</span>&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;<span>${filterWakaPercent["${commentArg}$i"]}</span>"
+    htmlBlock+="\n<span>${filterWakaName["${commentArg}$i"]}</span>&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;<span>${filterWakaText["${commentArg}$i"]}</span>&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;<span>${filterWakaPercent["${commentArg}$i"]}</span>"
   done
   printf "%s" "$htmlBlock"
 }
