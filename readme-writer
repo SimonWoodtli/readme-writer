@@ -1,8 +1,8 @@
 #!/usr/bin/bash
 ## set the personal access token & key to github env. var secret
-#declare wakaKey="$PERSONAL_WAKATIME_KEY"
-#declare githubKey="$PERSONAL_GITHUB_TOKEN"
-source api-keys #Temporary for testing the script
+declare wakaKey="$PERSONAL_WAKATIME_KEY"
+declare githubKey="$PERSONAL_GITHUB_TOKEN"
+#source api-keys #Temporary for testing the script
 # dependencies: bash, sed, jq, printf, perl
 declare -A flags
 ## check flags
