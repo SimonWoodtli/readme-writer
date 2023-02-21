@@ -312,13 +312,13 @@ _filterGithubData() {
         projectsOwn|projectsAll)
           filter=(".data.user.repositories.edges[$i]" ".node")
           repoName="$(jq -r "${filter[0]} | ${filter[1]}.name" <<< "${fetchGithubData["$githubComment"]}")"
-          ## if not enough data/repos found
-          if [[ "$repoName" == null ]]; then
-            filter0=""; filter1=""; filter2=""
-          ## if no data/repos at all found
-          elif [[ $i -eq 0 && "$repoName" == null ]]; then
+          ## if no data/repos at all found:
+          if [[ $i -eq 0 && "$repoName" == null ]]; then
             noData=true
-          ## assign data if found
+          ## if not enough data/repos found, assign empty filters:
+          elif [[ "$repoName" == null ]]; then
+            filter0=""; filter1=""; filter2=""
+          ## if data found assign filters:
           else
             ## skip github profile and zet repo
             [[ "$repoName" == "$user" || "$repoName" == zet ]] && continue
@@ -332,10 +332,10 @@ _filterGithubData() {
           fi;;
         projectsCount) filter=(".data.user.publicRepositories.totalCount" ".data.user.privateRepositories.totalCount")
           repoCount="$(jq -r "${filter[$i]}" <<< "${fetchGithubData["$githubComment"]}")"
-          if [[ "$repoCount" == null ]]; then
-            filter0=""; filter1=""; filter2=""
-          elif [[ $i -eq 0 && "$urlRepo" == null ]]; then
+          if [[ $i -eq 0 && "$urlRepo" == null ]]; then
             noData=true
+          elif [[ "$repoCount" == null ]]; then
+            filter0=""; filter1=""; filter2=""
           else
             filter0="💾"
             filter1="$repoCount"
@@ -356,10 +356,10 @@ _filterGithubData() {
           fi;;
         pullRequests) filter=(".data.search.edges[$i]" ".node")
           urlRepo="$(jq -r "${filter[0]} | ${filter[1]}.repository.url" <<< "${fetchGithubData["$githubComment"]}")"
-          if [[ "$urlRepo" == null ]]; then
-            filter0=""; filter1=""; filter2=""
-          elif [[ $i -eq 0 && "$urlRepo" == null ]]; then
+          if [[ $i -eq 0 && "$urlRepo" == null ]]; then
             noData=true
+          elif [[ "$urlRepo" == null ]]; then
+            filter0=""; filter1=""; filter2=""
           else
             nameWithOwner="$(jq -r "${filter[0]} | ${filter[1]}.repository.nameWithOwner" <<< "${fetchGithubData["$githubComment"]}")"
             urlRequest="$(jq -r "${filter[0]} | ${filter[1]}.url" <<< "${fetchGithubData["$githubComment"]}")"
@@ -372,10 +372,10 @@ _filterGithubData() {
         zet) filter=(".data.repository.refs.edges[$i]" ".node.target" ".node.name" )
           [[ $i -eq 0 ]] && nameWithOwner="$(jq -r ".data.repository.nameWithOwner" <<< "${fetchGithubData["$githubComment"]}")"
           urlCommit="$(jq -r "${filter[0]} | ${filter[1]}.treeUrl" <<< "${fetchGithubData["$githubComment"]}")"
-          if [[ "$urlCommit" == null ]]; then
-            filter0=""; filter1=""; filter2=""
-          elif [[ $i -eq 0 && "$urlCommit" == null ]]; then
+          if [[ $i -eq 0 && "$urlCommit" == null ]]; then
             noData=true
+          elif [[ "$urlCommit" == null ]]; then
+            filter0=""; filter1=""; filter2=""
           else
             isoSec="$(jq -r "${filter[0]} | ${filter[2]}" <<< "${fetchGithubData["$githubComment"]}")"
             commitMsg="$(jq -r "${filter[0]} | ${filter[1]}.message" <<< "${fetchGithubData["$githubComment"]}")"
@@ -386,10 +386,10 @@ _filterGithubData() {
           fi;;
         forks) filter=(".data.user.repositories.edges[$i]" ".node")
           urlRepo="$(jq -r "${filter[0]} | ${filter[1]}.url" <<< "${fetchGithubData["$githubComment"]}")"
-          if [[ "$urlRepo" == null ]]; then
-            filter0=""; filter1=""; filter2=""
-          elif [[ $i -eq 0 && "$urlRepo" == null ]]; then
+          if [[ $i -eq 0 && "$urlRepo" == null ]]; then
             noData=true
+          elif [[ "$urlRepo" == null ]]; then
+            filter0=""; filter1=""; filter2=""
           else
             nameWithOwner="$(jq -r "${filter[0]} | ${filter[1]}.nameWithOwner" <<< "${fetchGithubData["$githubComment"]}")"
             description="$(jq -r "${filter[0]} | ${filter[1]}.description" <<< "${fetchGithubData["$githubComment"]}")"
@@ -400,10 +400,10 @@ _filterGithubData() {
           fi;;
         stars) filter=(".data.user.starredRepositories.edges[$i]" ".node" ".starredAt")
           urlRepo="$(jq -r "${filter[0]} | ${filter[1]}.url" <<< "${fetchGithubData["$githubComment"]}")"
-          if [[ "$urlRepo" == null ]]; then
-            filter0=""; filter1=""; filter2=""
-          elif [[ $i -eq 0 && "$urlRepo" == null ]]; then
+          if [[ $i -eq 0 && "$urlRepo" == null ]]; then
             noData=true
+          elif [[ "$urlRepo" == null ]]; then
+            filter0=""; filter1=""; filter2=""
           else
             nameWithOwner="$(jq -r "${filter[0]} | ${filter[1]}.nameWithOwner" <<< "${fetchGithubData["$githubComment"]}")"
             description="$(jq -r "${filter[0]} | ${filter[1]}.description" <<< "${fetchGithubData["$githubComment"]}")"
@@ -414,10 +414,10 @@ _filterGithubData() {
           fi;;
         gists) filter=(".data.user.gists.edges[$i]" ".node")
           urlGist="$(jq -r "${filter[0]} | ${filter[1]}.url" <<< "${fetchGithubData["$githubComment"]}")"
-          if [[ "$urlGist" == null ]]; then
-            filter0=""; filter1=""; filter2=""
-          elif [[ $i -eq 0 && "$urlGist" == null ]]; then
+          if [[ $i -eq 0 && "$urlGist" == null ]]; then
             noData=true
+          elif [[ "$urlGist" == null ]]; then
+            filter0=""; filter1=""; filter2=""
           else
             fileName="$(jq -r "${filter[0]} | ${filter[1]}.files[0].name" <<< "${fetchGithubData["$githubComment"]}")"
             owner="$(jq -r "${filter[0]} | ${filter[1]}.owner.login" <<< "${fetchGithubData["$githubComment"]}")"
@@ -429,10 +429,10 @@ _filterGithubData() {
           fi;;
         followers) filter=(".data.user.followers.edges[$i]" ".node")
           urlFollower="$(jq -r "${filter[0]} | ${filter[1]}.url" <<< "${fetchGithubData["$githubComment"]}")"
-          if [[ "$urlFollower" == null ]]; then
-            filter0=""; filter1=""; filter2=""
-          elif [[ $i -eq 0 && "$urlFollower" == null ]]; then
+          if [[ $i -eq 0 && "$urlFollower" == null ]]; then
             noData=true
+          elif [[ "$urlFollower" == null ]]; then
+            filter0=""; filter1=""; filter2=""
           else
             nameFollower="$(jq -r "${filter[0]} | ${filter[1]}.login" <<< "${fetchGithubData["$githubComment"]}")"
             workplaceFollower="$(jq -r "${filter[0]} | ${filter[1]}.company" <<< "${fetchGithubData["$githubComment"]}")"
@@ -443,13 +443,13 @@ _filterGithubData() {
           fi;;
         sponsors) filter=(".data.user.sponsorshipsAsMaintainer.nodes[$i]" ".sponsorEntity" ".createdAt")
           urlSponsor="$(jq -r "${filter[0]} | ${filter[1]}.url" <<< "${fetchGithubData["$githubComment"]}")"
-          ## check if not enough data found, if so empty filter vars
-          if [[ "$urlSponsor" == null ]]; then
-            filter0=""; filter1=""; filter2=""
           ## check if the the first iteration is already empty. Meaning
           ## no data at all is found, but correct credentials.
-          elif [[ $i -eq 0 && "$urlSponsor" == null ]]; then
+          if [[ $i -eq 0 && "$urlSponsor" == null ]]; then
             noData=true
+          ## check if not enough data found, if so empty filter vars
+          elif [[ "$urlSponsor" == null ]]; then
+            filter0=""; filter1=""; filter2=""
           else
           ## assign data if data found
             nameSponsor="$(jq -r "${filter[0]} | ${filter[1]}.login" <<< "${fetchGithubData[$githubComment]}")"
@@ -502,6 +502,7 @@ _filterGithubData() {
       if [[ "$noData" = true ]]; then
         filter0="No Data found"; filter1=""; filter2=""
         iMax["$githubComment"]=1
+        noData=""
       fi
       ## if invalid github credentials
       if [[ $(jq -r .message <<< "${fetchGithubData["$githubComment"]}") == "Bad credentials" ]]; then
@@ -702,7 +703,7 @@ _filterWakaData() {
   ## coming in.
   for wakaComment in "${wakaComments[@]}"; do
     ## check if data fetched with valid credentials
-    if [[ $(jq -r '.errors | .[]' <<<"$fetchWakaData") == "Unauthorized." ]]; then
+    if [[ $(jq -r '.errors | .[]' <<<"$fetchWakaData" 2>/dev/null) == "Unauthorized." ]]; then
       filterWakaLines+=( ["$wakaComment"NameLines]="1" )
       filterWakaName+=( ["${wakaComment}0"]="Bad Credentials")
       ## skip out of rest of loop cause bad credentials
