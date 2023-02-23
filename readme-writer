@@ -20,7 +20,6 @@ declare readme="$2"
 ## Check if template and readme are right format or exit
 [[ "$template" == *.tpl ]] || exit 1
 [[ "$readme" == *.md ]] || exit 1
-
 ########################## general func start ##########################
 _main() {
   ## waka
@@ -528,7 +527,9 @@ _writeGithubTemplate() {
     ## if no content found skip over to next comment
     [[ -n $content ]] || continue
     ## write block
-    perl -i -0777pe "s@(<!--github-$githubComment-start-->)(\s*)(<!--github-$githubComment-end-->)@\1\n${content}\2\3@s" "$template"
+    perl -i -0777pe "s@(<!--github-$githubComment-start-->)\h*\n(\h*)(<!--github-$githubComment-end-->)@\1\n${content}\n\2\3@s" "$template"
+    ##Functional without spaces between comments: (this works if both comments are at beginnig of line)
+    #perl -i -0777pe "s@(<!--github-$githubComment-start-->)\s*(<!--github-$githubComment-end-->)@\1\n${content}\n\2@s" "$template"
   done
 }
 _createGithubMarkdownBlock() {
@@ -758,7 +759,7 @@ _writeWakaTemplate() {
     content="$($callFunction "$wakaComment")"
     ## if no content found skip over to next comment
     [[ -n $content ]] || continue
-    perl -i -0777pe "s@(<!--wakatime-$wakaComment-start-->)(\s*)(<!--wakatime-$wakaComment-end-->)@\1\n${content}\2\3@s" "$template"
+    perl -i -0777pe "s@(<!--wakatime-$wakaComment-start-->)\h*\n(\h*)(<!--wakatime-$wakaComment-end-->)@\1\n${content}\n\2\3@s" "$template"
   done
 }
 _createWakaMarkdownBlock() {
@@ -841,8 +842,11 @@ _cleanUpFiles() {
       ## remove comments from README.md
       sed -i "/<!--$service-$comment-start-->/d" "$readme"
       sed -i "/<!--$service-$comment-end-->/d" "$readme"
-      ## remove content between comments from template
-      perl -i -0777pe "s@(<!--$service-$comment-start-->)(\s*).*?(\s*)(<!--$service-$comment-end-->)@\1\3\4@s" "$template"
+      ## remove content between comments from template (this works if both comments are at the beginning of each line)
+      #perl -i -0777pe "s@(<!--$service-$comment-start-->).*?(<!--$service-$comment-end-->)@\1\n\2@s" "$template"
+      perl -i -0777pe "s@(<!--$service-$comment-start-->).*?\n.*?\n(\s*)(<!--$service-$comment-end-->)@\1\n\2\3@s" "$template"
+      ## remove trailing white space on commen-end
+      sed -i "s|<!--$service-$comment-end-->\s*$|<!--$service-$comment-end-->|g" "$template"
     done
   done
 }
