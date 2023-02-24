@@ -18,7 +18,7 @@
 
 1. Create a GitHub Personal Access Token in your [Developer Settings] and give it the following scopes: `public_repo, read:org, read:user, repo:status`
 1. Go to your GitHub Profile Repo. Or if you don't have it yet create a Repo and name it like your username.
-    1. Go to the Repos settings `https://github.com/yourUsername/yourUsername/settings` and under `Secretes and variables`, `Actions`  create a new secret. The Name should be 'PERSONAL_GITHUB_TOKEN' and the Secret/value is your GitHub Token that you just created.
+    1. Go to the Repos settings `https://github.com/yourUsername/yourUsername/settings` and under `Secrets and variables`, `Actions`  create a new secret. The Name should be 'PERSONAL_GITHUB_TOKEN' and the Secret/value is your GitHub Token that you just created.
 1. Optionally Create a Wakatime account and follow their setup procedure if you want to display Wakatime stats on your profile.
     1. On the Wakatimes website in the Settings you can find your API key. Copy it and go to create another Secret on your profile Repo Settings. Name it 'PERSONAL_WAKATIME_KEY' and paste the key into Secret/value.
 
@@ -162,7 +162,9 @@ for setup instructions!
 
 <details>
   <summary><b>Automated GitHub Profile Rendered Markdown Example</b></summary>
-  ![Screenshot from 2023-02-23 15-23-18](https://user-images.githubusercontent.com/66033447/221223488-d3608db8-3f47-406e-b202-2d4eff4510b6.png)
+
+![Screenshot from 2023-02-23 15-23-18](https://user-images.githubusercontent.com/66033447/221223488-d3608db8-3f47-406e-b202-2d4eff4510b6.png)
+
 </details>
 
 
