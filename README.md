@@ -17,10 +17,10 @@
 ### 1. Create and Add Tokens
 
 1. Create a GitHub Personal Access Token in your [Developer Settings] and give it the following scopes: `public_repo, read:org, read:user, repo:status`
-2. Go to your GitHub Profile Repo. Or if you don't have it yet create a Repo and name it like your username.
-  1. Go to the Repos settings `https://github.com/yourUsername/yourUsername/settings` and under `Secretes and variables`, `Actions`  create a new secret. The Name should be 'PERSONAL_GITHUB_TOKEN' and the Secret/value is your GitHub Token that you just created.
+1. Go to your GitHub Profile Repo. Or if you don't have it yet create a Repo and name it like your username.
+    1. Go to the Repos settings `https://github.com/yourUsername/yourUsername/settings` and under `Secretes and variables`, `Actions`  create a new secret. The Name should be 'PERSONAL_GITHUB_TOKEN' and the Secret/value is your GitHub Token that you just created.
 1. Optionally Create a Wakatime account and follow their setup procedure if you want to display Wakatime stats on your profile.
-  1. On the Wakatimes website in the Settings you can find your API key. Copy it and go to create another Secret on your profile Repo Settings. Name it 'PERSONAL_WAKATIME_KEY' and paste the key into Secret/value.
+    1. On the Wakatimes website in the Settings you can find your API key. Copy it and go to create another Secret on your profile Repo Settings. Name it 'PERSONAL_WAKATIME_KEY' and paste the key into Secret/value.
 
 ### 2.1 Create Files: Local Machine
 
@@ -28,35 +28,34 @@
 1. Create a folder: `mkdir .github/workflows`
 1. Download the action: `curl -LJ https://raw.githubusercontent.com/SimonWoodtli/readme-writer/main/readmeUpdateAction.yml -o .github/workflows/readmeUpdateAction.yml`
 1. Create another folder: `mkdir templates`
-  1. If you already have a README.md copy&paste it into it `cp README.md templates/README.md.tpl`
-  1. If you just created your GitHub Profile Repo: `touch templates/README.md.tpl`
-  1. From here on out you won't be adding anything into the regular README.md. Because it will get overwritten by the action. So instead add the information in the README.md.tpl.
-  1. Finally write all the html-comments, about auto fetched data you would like to display into README.md.tpl. Checkout the Example to see how.
-  1. add, commit and push it
+    1. If you already have a README.md copy&paste it into it `cp README.md templates/README.md.tpl`
+    1. If you just created your GitHub Profile Repo: `touch templates/README.md.tpl`
+    1. From here on out you won't be adding anything into the regular README.md. Because it will get overwritten by the action. So instead add the information in the README.md.tpl.
+    1. Finally write all the html-comments, about auto fetched data you would like to display into README.md.tpl. Checkout the Example to see how.
+    1. add, commit and push it
 
 ### 2.2 Create Files: Website
 
 If you don't know what these commands are in '2.1' fear not. All these things can be done on the GitHub website. You can easily create folders and files and copy paste stuff on the website.
 
 1. Go to your GitHub Profile Repo page
-2. Create a folder/file 'Add files' then name it '.github/workflows/readmeUpdateAction.yml' and copy/paste [readmeUpdateAction.yml] content into it. Then Give it a commit title/message and commit it to the main branch.
-3. Create another folder/file the same way but name it 'templates/README.md.tpl' and if you already have a profile copy/paste the content from README.md in there.
-  1. From here on out you won't be adding anything into the regular README.md. Because it will get overwritten by the action. So instead add the information in the README.md.tpl.
-  1. Finally write all the html-comments, about auto fetched data you would like to display into README.md.tpl. Checkout the Example to see how.
+1. Create a folder/file 'Add files' then name it '.github/workflows/readmeUpdateAction.yml' and copy/paste [readmeUpdateAction.yml] content into it. Then Give it a commit title/message and commit it to the main branch.
+1. Create another folder/file the same way but name it 'templates/README.md.tpl' and if you already have a profile copy/paste the content from README.md in there.
+    1. From here on out you won't be adding anything into the regular README.md. Because it will get overwritten by the action. So instead add the information in the README.md.tpl.
+    1. Finally write all the html-comments, about auto fetched data you would like to display into README.md.tpl. Checkout the Example to see how.
 
+### 3. Examples
 
-[html-comments]:<???>
-[readmeUpdateAction.yml]:<https://raw.githubusercontent.com/SimonWoodtli/readme-writer/main/readmeUpdateAction.yml>
-[Developer Settings]:<https://github.com/settings/tokens>
+These titles in the examples are just to showcase and categorize. You can write your own titles only the html-comments are relevant.
 
 <details>
   <summary><b>Automated GitHub Profile Markdown Example</b></summary>
+
+```markdown
 ## 👋 &nbsp;Hey there! This is an automated example Profile
 
 Checkout [readme-writer](https://github.com/SimonWoodtli/readme-writer)
 for setup instructions!
-
-These titles are just to showcase and categorize. You can write your own titles only the html-comments are relevant.
 
 ## GitHub Graphql
 
@@ -157,11 +156,13 @@ These titles are just to showcase and categorize. You can write your own titles 
 
 <!--wakatime-timezone-start-->
 <!--wakatime-timezone-end-->
+```
+
 </details>
 
 <details>
   <summary><b>Automated GitHub Profile Rendered Markdown Example</b></summary>
-
+  ![Screenshot from 2023-02-23 15-23-18](https://user-images.githubusercontent.com/66033447/221223488-d3608db8-3f47-406e-b202-2d4eff4510b6.png)
 </details>
 
 
@@ -198,3 +199,6 @@ I should have started with debug commands earlier in order to figure out what co
 Since I never used github action before it would have probably also been better to start with a project that did not rely on Docker and only uses an ubuntu VM. That complexity was really challenging and frustrating, which is also why I took a couple of breaks on this project. But hey I persevered and it's finally working 🎉
 
 [readme-writer]:<https://hub.docker.com/r/simonwoodtli/readme-writer>
+[html-comments]:<???>
+[readmeUpdateAction.yml]:<https://raw.githubusercontent.com/SimonWoodtli/readme-writer/main/readmeUpdateAction.yml>
+[Developer Settings]:<https://github.com/settings/tokens>
