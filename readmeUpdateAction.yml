@@ -13,6 +13,9 @@ jobs:
   ## Name of first job/group with its actions
   build:
     runs-on: ubuntu-latest
+    ## needed for git push
+    permissions:
+      contents: write
     ## Docker container to be pulled, the following steps are executed
     ## within running docker container and busybox shell (cause Alpine)
     container:
