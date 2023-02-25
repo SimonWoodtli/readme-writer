@@ -280,6 +280,6 @@ You can also checkout my [profile page] if it helps.
 [profile page]: <https://github.com/SimonWoodtli/SimonWoodtli>
 [act]: <https://github.com/nektos/act>
 [readme-writer]:<https://hub.docker.com/r/simonwoodtli/readme-writer>
-[Example]: <#example>
+[Example]: <#3. example>
 [readmeUpdateAction.yml]:<https://raw.githubusercontent.com/SimonWoodtli/readme-writer/main/readmeUpdateAction.yml>
 [Developer Settings]:<https://github.com/settings/tokens>
