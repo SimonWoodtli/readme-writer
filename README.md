@@ -40,7 +40,7 @@ GitHub workflow with the `readme-writer` script in a Docker container.
 ### 2.1 Create Files: Local Machine
 
 1. Clone your GitHub Repo to your machine and `cd` into it
-1. Create a folder: `mkdir .github/workflows`
+1. Create a folder: `mkdir -p .github/workflows`
 1. Download the action: `curl -LJ
    https://raw.githubusercontent.com/SimonWoodtli/readme-writer/main/readmeUpdateAction.yml
    -o .github/workflows/readmeUpdateAction.yml`
