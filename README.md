@@ -75,7 +75,7 @@ files and copy paste things on the website.
        write its HTML comment in the README.md.tpl file. Take a look at the
        [Example] to see how.
 
-### 3. Example
+## Example
 
 The titles in the example are for illustration and categorization only. You can write your own titles, only the HTML comments are relevant.
 
@@ -280,6 +280,6 @@ You can also checkout my [profile page] if it helps.
 [profile page]: <https://github.com/SimonWoodtli/SimonWoodtli>
 [act]: <https://github.com/nektos/act>
 [readme-writer]:<https://hub.docker.com/r/simonwoodtli/readme-writer>
-[Example]: <#3. example>
+[Example]: <#example>
 [readmeUpdateAction.yml]:<https://raw.githubusercontent.com/SimonWoodtli/readme-writer/main/readmeUpdateAction.yml>
 [Developer Settings]:<https://github.com/settings/tokens>
