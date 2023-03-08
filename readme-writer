@@ -171,7 +171,7 @@ _fetchGithubData() {
         fi;;
     esac
   done
-  #echo "${fetchGithubData[languages]}"
+  #echo "${fetchGithubData[productiveTime]}"
   _filterGithubData
 }
 _fetchGithubLanguagesPages() {
@@ -641,7 +641,7 @@ _filterGithubProductiveDay() {
 }
 _filterGithubProductiveTime() {
   local -A commitCount; local -A percentage
-  local -i totalCommitCount=$(grep -c "committedDate" <<< "${fetchGithubData[productiveDay]}")
+  local -i totalCommitCount=$(grep -c "committedDate" <<< "${fetchGithubData[productiveTime]}")
   local -i noData=0
   local datestamp; local timestamp; local -i hours; local -i minutes
   local -a daytimes=( "Morning" "Daytime" "Evening" "Night" )
@@ -652,16 +652,20 @@ _filterGithubProductiveTime() {
       ## truncate date from datestamp, only time needed
       timestamp="${datestamp##*T}"
       ## get hours
-      hours="$(cut -d: -f1 <<< "$timestamp")"
+      ## $((10#INT)) is needed because 08 gets interpreted as an octal, but it isn't
+      ## number so if your timestamp i at 8 in the morning it crashes. bash
+      ## interpretes numbers with a 0 like 01 02 03... etc as octals but 08
+      ## is not a valid octal digit goes only until 07.
+      #
+      ## To fix this, you can use the 10# prefix to specify that the
+      ## value should be interpreted as a base-10 decimal number.
+      hours=$((10#${timestamp%%:*})) #no cut needed -> avoid subshells
       ## get minutes, sed needed to rm first 0 for minutes 01-09 otherwise remainder errors, minute 00 is fine just one 0 gets removed
       minutes="$(cut -d: -f2 <<< "$timestamp" | sed 's|^0||')"
-      #echo $timestamp
-      #echo $hours-$minutes
       if [[ "$minutes%60" -ge 30 ]]; then
         hours+=1
         [[ "$hours" -eq 24 ]] && hours=0
       fi
-      #echo $hours-$minutes
       case $hours in
         [0-5]) commitCount[Night]=$((commitCount[Night]+1));;
         [6-9]|1[0-1]) commitCount[Morning]=$((commitCount[Morning]+1));;
