@@ -277,6 +277,10 @@ You can also checkout my [profile page] if it helps.
   Ubuntu VM. This complexity made the whole project really challenging and
   frustrating at times.
 
+## Stats
+
+![Alt](https://repobeats.axiom.co/api/embed/f6897e38db94b353c970a13f76111d248a262db6.svg "Repobeats analytics image")
+
 [profile page]: <https://github.com/SimonWoodtli/SimonWoodtli>
 [act]: <https://github.com/nektos/act>
 [readme-writer]:<https://hub.docker.com/r/simonwoodtli/readme-writer>
