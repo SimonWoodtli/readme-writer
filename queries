@@ -89,7 +89,7 @@ _printQueryZet() {
     nameWithOwner
     refs(
       refPrefix: "refs/tags/",
-      last: 5,
+      first: 5,
       orderBy: {field: TAG_COMMIT_DATE, direction: DESC}
     ) {
       edges {
