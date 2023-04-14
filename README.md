@@ -1,6 +1,7 @@
 # readme-writer
 
 [![License](https://img.shields.io/badge/license-Apache2-brightgreen.svg)](LICENSE)
+[![wakatime](https://wakatime.com/badge/user/173067c8-7ded-4cfb-8605-b3032659c00c/project/85ba0238-85e9-4fa9-8a0e-e3d684ca9a52.svg)](https://wakatime.com/badge/user/173067c8-7ded-4cfb-8605-b3032659c00c/project/85ba0238-85e9-4fa9-8a0e-e3d684ca9a52)
 
 `readme-writer` automatically fetches the data from your Wakatime and GitHub
 APIs and updates your GitHub.com profile page. This is done using a custom
